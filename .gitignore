@@ -7,3 +7,4 @@ keystore.properties
 .DS_Store
 *.apk
 *.aab
+trailer/

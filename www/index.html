@@ -34,7 +34,8 @@ select:hover,button:hover{background:#30363d}
 .note-btn.ok{background:#238636;border-color:#3fb950;transform:scale(1.08)}
 .note-btn.bad{background:#b62324;border-color:#f85149;transform:scale(0.94)}
 .note-btn.reveal{border-color:#3fb950;color:#3fb950}
-#piano{position:relative;display:flex;width:100%;max-width:640px;height:150px;margin-top:10px;user-select:none}
+#piano{display:flex;flex-direction:column;width:100%;max-width:640px;margin-top:10px;user-select:none}
+.prow{position:relative;display:flex;width:100%;height:150px}
 .wkey{flex:1;background:#e6edf3;border:1px solid #30363d;border-radius:0 0 6px 6px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;color:#111;font-size:.85rem;font-weight:600;cursor:pointer}
 .wkey:hover{background:#fff}
 .bkey{position:absolute;top:0;height:62%;z-index:2;background:#161b22;border:1px solid #010409;border-radius:0 0 4px 4px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;color:#aaa;font-size:.58rem;font-weight:600;cursor:pointer}
@@ -49,7 +50,7 @@ select:hover,button:hover{background:#30363d}
   h1{font-size:1.05rem;margin:4px 0 10px}
   .panel{padding:10px 12px}
   .note-btn{min-width:58px;padding:12px 6px;font-size:1.05rem}
-  #piano{height:130px}
+  .prow{height:130px}
   .hint{margin-top:6px}
 }
 </style>
@@ -203,7 +204,6 @@ function renderStaff(n){
     for(let p = c.bottom - 2; p >= end; p -= 2) s += ledger(p);
   }
   s += `<text x="75" y="${c.clefY}" font-size="${c.fs}" fill="#e6edf3" text-anchor="middle" dominant-baseline="central" font-family="'Noto Music','Bravura','Segoe UI Symbol','Apple Symbols',serif">${c.glyph}</text>`;
-  s += `<text x="75" y="342" font-size="13" fill="#9aa4b2" text-anchor="middle">${c.name}</text>`;
   const y = ny;
   s += `<ellipse cx="300" cy="${y}" rx="10" ry="7" fill="#e6edf3" transform="rotate(-15 300 ${y})"/>`;
   $('staff').innerHTML = s;
@@ -391,12 +391,9 @@ function buildPiano(){
   if(state.mode === 'piano-relative'){
     for(let i = 0; i < 7; i++) dias.push(28 + i);
   } else {
-    const startOct = Math.floor(state.from / 7), endOct = Math.floor(state.to / 7);
-    for(let o = startOct; o <= endOct; o++)
-      for(let i = 0; i < 7; i++){
-        const dia = o * 7 + i;
-        if(dia >= state.from && dia <= state.to) dias.push(dia);
-      }
+    const start = Math.floor(state.from / 7) * 7;
+    const end = Math.floor(state.to / 7) * 7 + 6;
+    for(let dia = start; dia <= end; dia++) dias.push(dia);
   }
   const rel = state.mode === 'piano-relative';
   const showLabels = $('pianoLabels').checked;
@@ -404,27 +401,67 @@ function buildPiano(){
   const SHARP_IT = {0:'Do♯',1:'Re♯',3:'Fa♯',4:'Sol♯',5:'La♯'};
   const SHARP_EN = {0:'C♯',1:'D♯',3:'F♯',4:'G♯',5:'A♯'};
   const sh = state.it ? SHARP_IT : SHARP_EN;
-  const N = dias.length, ww = 100 / N, bw = ww * 0.6;
+  const N = dias.length;
+  const segs = [];
+  let curSeg = [];
   dias.forEach(dia => {
-    const k = document.createElement('div');
-    k.className = 'wkey';
-    k.dataset.dia = dia;
-    if(showLabels) k.textContent = names[dia % 7] + (rel ? '' : Math.floor(dia / 7));
-    k.addEventListener('click', () => pianoAnswer(dia, k));
-    box.appendChild(k);
+    if(dia % 7 === 0 && curSeg.length){ segs.push(curSeg); curSeg = []; }
+    curSeg.push(dia);
   });
-  for(let j = 0; j < N - 1; j++){
-    const lo = dias[j], i = lo % 7;
-    if(dias[j + 1] - lo !== 1 || !(i in sh)) continue;
-    const b = document.createElement('div');
-    b.className = 'bkey';
-    b.style.left = (((j + 1) * ww) - bw / 2) + '%';
-    b.style.width = bw + '%';
-    if(showLabels) b.textContent = sh[i];
-    const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
-    b.addEventListener('click', () => playNote(midiFreq(midi)));
-    box.appendChild(b);
+  if(curSeg.length) segs.push(curSeg);
+  const R = Math.max(1, Math.ceil(N / 14));
+  let cap = Math.max(...segs.map(s => s.length));
+  const fits = M => {
+    let r = 1, a = 0;
+    for(const g of segs){
+      if(a + g.length > M){ r++; a = 0; }
+      a += g.length;
+    }
+    return r <= R;
+  };
+  while(cap < N && !fits(cap)) cap++;
+  const rows = [];
+  let row = [], acc = 0;
+  for(const g of segs){
+    if(acc + g.length > cap && row.length){ rows.push(row); row = []; acc = 0; }
+    row.push(...g);
+    acc += g.length;
   }
+  if(row.length) rows.push(row);
+  const multiRow = rows.length > 1;
+  const maxLen = Math.max(...rows.map(r => r.length));
+  const gw = 100 / maxLen, gb = gw * 0.6;
+  rows.forEach(rowDias => {
+    const row = document.createElement('div');
+    row.className = 'prow';
+    if(multiRow){
+      const maxTotal = window.innerWidth <= 600 ? 264 : 320;
+      row.style.height = Math.max(56, Math.floor(maxTotal / rows.length)) + 'px';
+    }
+    const M = rowDias.length;
+    rowDias.forEach(dia => {
+      const k = document.createElement('div');
+      k.className = 'wkey';
+      k.style.flex = `0 1 ${gw}%`;
+      k.dataset.dia = dia;
+      if(showLabels) k.textContent = names[dia % 7] + (rel ? '' : Math.floor(dia / 7));
+      k.addEventListener('click', () => pianoAnswer(dia, k));
+      row.appendChild(k);
+    });
+    for(let j = 0; j < M - 1; j++){
+      const lo = rowDias[j], i = lo % 7;
+      if(rowDias[j + 1] - lo !== 1 || !(i in sh)) continue;
+      const b = document.createElement('div');
+      b.className = 'bkey';
+      b.style.left = (((j + 1) * gw) - gb / 2) + '%';
+      b.style.width = gb + '%';
+      if(showLabels) b.textContent = sh[i];
+      const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
+      b.addEventListener('click', () => playNote(midiFreq(midi)));
+      row.appendChild(b);
+    }
+    box.appendChild(row);
+  });
 }
 function pianoAnswer(dia, el){
   if(!state.awaiting || !state.running) return;
