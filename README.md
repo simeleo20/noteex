@@ -20,6 +20,10 @@ A free, offline, ad-free app to practice reading sheet music. Most note-reading 
 - **Audio feedback** — hear the target note, a success arpeggio, or a buzz on mistakes (Web Audio API)
 - **Streak & score tracking**, keyboard shortcuts (1–7), collapsible settings during play
 
+## Play online
+
+https://simeleo20.github.io/noteex/
+
 ## Run it
 
 No build step needed: open `www/index.html` in any browser. Everything works offline.
