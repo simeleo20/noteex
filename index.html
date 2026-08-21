@@ -1,16 +1,19 @@
 <!DOCTYPE html>
-<html lang="it">
+<html lang="en">
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Allenamento lettura note</title>
+<title>Note Exerciser</title>
 <style>
 :root{color-scheme:dark}
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 body{margin:0;font-family:system-ui,sans-serif;background:#11151c;color:#e6edf3;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
 h1{font-size:1.4rem;margin:8px 0 16px}
 .panel{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px}
 .panel label{font-size:.8rem;color:#9aa4b2;display:flex;flex-direction:column;gap:4px}
+.panel label.chk{flex-direction:row;align-items:center;gap:6px;font-size:.9rem;color:#e6edf3;padding-bottom:8px}
+.panel label.chk input{width:16px;height:16px}
 select,button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:8px;padding:8px 14px;font-size:.95rem;cursor:pointer}
 select:hover,button:hover{background:#30363d}
 .primary{background:#238636;border-color:#2ea043;font-weight:600}
@@ -39,30 +42,31 @@ select:hover,button:hover{background:#30363d}
 </style>
 </head>
 <body>
-<h1>🎼 Allenamento lettura note</h1>
+<h1>🎼 Note Exerciser</h1>
 
 <div id="setup" class="panel">
-  <label>Chiave
+  <label>Clef
     <select id="clef">
-      <option value="treble">Violino</option>
-      <option value="bass">Basso</option>
-      <option value="alto">Contralto</option>
-      <option value="tenor">Tenore</option>
+      <option value="treble">Treble</option>
+      <option value="bass">Bass</option>
+      <option value="alto">Alto</option>
+      <option value="tenor">Tenor</option>
     </select>
   </label>
-  <label>Nota minima <select id="rangeFrom"></select></label>
-  <label>Nota massima <select id="rangeTo"></select></label>
-  <label>Modalità risposta
+  <label>Lowest note <select id="rangeFrom"></select></label>
+  <label>Highest note <select id="rangeTo"></select></label>
+  <label>Answer mode
     <select id="answerMode">
-      <option value="it">Bottoni · Do Re Mi</option>
-      <option value="en">Bottoni · C D E F G A B</option>
-      <option value="mic-relative">Microfono · relativa</option>
-      <option value="mic-exact">Microfono · esatta</option>
-      <option value="piano-relative">Pianoforte · relativa</option>
-      <option value="piano-exact">Pianoforte · esatta</option>
+      <option value="it">Buttons · Solfège (Do Re Mi)</option>
+      <option value="en">Buttons · Letters (C D E F G A B)</option>
+      <option value="mic-relative">Microphone · relative</option>
+      <option value="mic-exact">Microphone · exact</option>
+      <option value="piano-relative">Piano · relative</option>
+      <option value="piano-exact">Piano · exact</option>
     </select>
   </label>
-  <button id="startBtn" class="primary">▶ Inizia</button>
+  <label class="chk"><input type="checkbox" id="pianoLabels" checked> Key labels</label>
+  <button id="startBtn" class="primary">▶ Start</button>
 </div>
 
 <div id="game" hidden>
@@ -72,7 +76,7 @@ select:hover,button:hover{background:#30363d}
   <div id="feedback"></div>
   <div id="buttons"></div>
   <div id="piano" hidden></div>
-  <p class="hint" id="hint">Rispondi cliccando o premendo i tasti 1–7</p>
+  <p class="hint" id="hint">Answer by clicking or pressing keys 1–7</p>
   <button id="stopBtn">⏹ Stop</button>
 </div>
 
@@ -83,10 +87,10 @@ const NAMES_IT = ['Do','Re','Mi','Fa','Sol','La','Si'];
 const NAMES_EN = ['C','D','E','F','G','A','B'];
 const SEMI = [0,2,4,5,7,9,11];
 const CLEFS = {
-  treble:{name:'Violino',   glyph:'\u{1D11E}', bottom:30, clefY:270, fs:95},
-  bass:  {name:'Basso',     glyph:'\u{1D122}', bottom:18, clefY:265, fs:78},
-  alto:  {name:'Contralto', glyph:'\u{1D121}', bottom:24, clefY:270, fs:88},
-  tenor: {name:'Tenore',    glyph:'\u{1D121}', bottom:22, clefY:250, fs:88}
+  treble:{name:'Treble',   glyph:'\u{1D11E}', bottom:30, clefY:270, fs:95},
+  bass:  {name:'Bass',     glyph:'\u{1D122}', bottom:18, clefY:265, fs:78},
+  alto:  {name:'Alto', glyph:'\u{1D121}', bottom:24, clefY:270, fs:88},
+  tenor: {name:'Tenor',    glyph:'\u{1D121}', bottom:22, clefY:250, fs:88}
 };
 const DEFAULT_RANGE = {treble:[28,39], bass:[14,25], alto:[21,32], tenor:[21,32]};
 
@@ -214,7 +218,7 @@ function flash(ok, pressedEl){
   if(correctEl) correctEl.classList.add(ok ? 'ok' : 'reveal');
   if(!ok && pressedEl) pressedEl.classList.add('bad');
   const fb = $('feedback');
-  fb.textContent = ok ? '✔ Giusto!' : `✘ Era ${(state.it ? NAMES_IT : NAMES_EN)[state.cur.i]}${state.cur.o}`;
+  fb.textContent = ok ? '✔ Correct!' : `✘ It was ${(state.it ? NAMES_IT : NAMES_EN)[state.cur.i]}${state.cur.o}`;
   fb.className = ok ? 'ok' : 'bad';
   setTimeout(() => {
     document.querySelectorAll('.note-btn,.wkey,.bkey').forEach(b => b.classList.remove('ok','bad','reveal'));
@@ -288,7 +292,7 @@ function micLoop(){
       answerValue(ok);
     }
   } else {
-    el.textContent = '🎤 Ascolto…';
+    el.textContent = '🎤 Listening…';
     stableCount = 0; lastCandidate = -999;
   }
 }
@@ -325,6 +329,8 @@ function buildPiano(){
       }
   }
   const rel = state.mode === 'piano-relative';
+  const showLabels = $('pianoLabels').checked;
+  const names = state.it ? NAMES_IT : NAMES_EN;
   const SHARP_IT = {0:'Do♯',1:'Re♯',3:'Fa♯',4:'Sol♯',5:'La♯'};
   const SHARP_EN = {0:'C♯',1:'D♯',3:'F♯',4:'G♯',5:'A♯'};
   const sh = state.it ? SHARP_IT : SHARP_EN;
@@ -333,6 +339,7 @@ function buildPiano(){
     const k = document.createElement('div');
     k.className = 'wkey';
     k.dataset.dia = dia;
+    if(showLabels) k.textContent = names[dia % 7] + (rel ? '' : Math.floor(dia / 7));
     k.addEventListener('click', () => pianoAnswer(dia, k));
     box.appendChild(k);
   });
@@ -343,6 +350,7 @@ function buildPiano(){
     b.className = 'bkey';
     b.style.left = (((j + 1) * ww) - bw / 2) + '%';
     b.style.width = bw + '%';
+    if(showLabels) b.textContent = sh[i];
     const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
     b.addEventListener('click', () => playNote(midiFreq(midi)));
     box.appendChild(b);
@@ -361,7 +369,7 @@ function pianoAnswer(dia, el){
       const o = Math.floor(d / 7), i = d % 7;
       const opt = document.createElement('option');
       opt.value = d;
-      opt.textContent = `${NAMES_IT[i]}${o} (${NAMES_EN[i]}${o})`;
+      opt.textContent = `${NAMES_EN[i]}${o} (${NAMES_IT[i]}${o})`;
       sel.appendChild(opt);
     }
   }
@@ -388,21 +396,20 @@ $('startBtn').addEventListener('click', async () => {
       await startMic();
     } catch(err) {
       $('feedback').className = 'bad';
-      $('feedback').textContent = '⚠ Impossibile accedere al microfono';
+      $('feedback').textContent = '⚠ Cannot access the microphone';
       return;
     }
   }
   state.running = true;
-  $('setup').hidden = true;
   $('game').hidden = false;
   $('feedback').textContent = '';
   $('buttons').hidden = mic || piano;
   $('piano').hidden = !piano;
   $('micStatus').hidden = !mic;
   $('hint').textContent =
-    mic  ? (state.mode === 'mic-exact'   ? 'Canta la nota esatta!' : 'Canta la nota: qualsiasi ottava va bene!') :
-    piano? (state.mode === 'piano-exact' ? 'Premi il tasto esatto!' : 'Premi il tasto giusto: qualsiasi ottava va bene!') :
-           'Rispondi cliccando o premendo i tasti 1–7';
+    mic  ? (state.mode === 'mic-exact'   ? 'Sing the exact note!' : 'Sing the note: any octave works!') :
+    piano? (state.mode === 'piano-exact' ? 'Press the exact key!' : 'Press the right key: any octave works!') :
+           'Answer by clicking or pressing keys 1–7';
   if(mic){ stableCount = 0; lastCandidate = -999; micTimer = setInterval(micLoop, 80); }
   else if(piano) buildPiano();
   else relabel();
@@ -414,7 +421,6 @@ $('stopBtn').addEventListener('click', () => {
   state.awaiting = false;
   stopMic();
   $('game').hidden = true;
-  $('setup').hidden = false;
 });
 document.addEventListener('keydown', e => {
   if($('game').hidden || isMicMode()) return;
