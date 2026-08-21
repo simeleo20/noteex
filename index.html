@@ -21,11 +21,20 @@ select:hover,button:hover{background:#30363d}
 #feedback{height:1.6rem;margin-top:8px;font-size:1.15rem;font-weight:700}
 #feedback.ok{color:#3fb950}
 #feedback.bad{color:#f85149}
+#micStatus{height:1.6rem;margin-top:8px;font-size:1.25rem;font-weight:700;color:#79c0ff}
 #buttons{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
 .note-btn{min-width:74px;padding:14px 10px;font-size:1.15rem;font-weight:600;border-radius:10px}
 .note-btn.ok{background:#238636;border-color:#3fb950;transform:scale(1.08)}
 .note-btn.bad{background:#b62324;border-color:#f85149;transform:scale(0.94)}
 .note-btn.reveal{border-color:#3fb950;color:#3fb950}
+#piano{position:relative;display:flex;width:100%;max-width:640px;height:150px;margin-top:10px;user-select:none}
+.wkey{flex:1;background:#e6edf3;border:1px solid #30363d;border-radius:0 0 6px 6px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:8px;color:#111;font-size:.85rem;font-weight:600;cursor:pointer}
+.wkey:hover{background:#fff}
+.bkey{position:absolute;top:0;height:62%;z-index:2;background:#161b22;border:1px solid #010409;border-radius:0 0 4px 4px;display:flex;align-items:flex-end;justify-content:center;padding-bottom:4px;color:#aaa;font-size:.58rem;font-weight:600;cursor:pointer}
+.bkey:hover{background:#30363d}
+.wkey.ok,.bkey.ok{background:#3fb950!important;color:#04260a}
+.wkey.bad,.bkey.bad{background:#f85149!important;color:#2d0505}
+.wkey.reveal{box-shadow:inset 0 0 0 3px #238636}
 .hint{color:#9aa4b2;font-size:.8rem;margin:10px 0 0}
 </style>
 </head>
@@ -43,16 +52,27 @@ select:hover,button:hover{background:#30363d}
   </label>
   <label>Nota minima <select id="rangeFrom"></select></label>
   <label>Nota massima <select id="rangeTo"></select></label>
-  <button id="nameToggle">Nomi: Do Re Mi</button>
+  <label>Modalità risposta
+    <select id="answerMode">
+      <option value="it">Bottoni · Do Re Mi</option>
+      <option value="en">Bottoni · C D E F G A B</option>
+      <option value="mic-relative">Microfono · relativa</option>
+      <option value="mic-exact">Microfono · esatta</option>
+      <option value="piano-relative">Pianoforte · relativa</option>
+      <option value="piano-exact">Pianoforte · esatta</option>
+    </select>
+  </label>
   <button id="startBtn" class="primary">▶ Inizia</button>
 </div>
 
 <div id="game" hidden>
   <div id="score"></div>
   <svg id="staff" viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="micStatus" hidden></div>
   <div id="feedback"></div>
   <div id="buttons"></div>
-  <p class="hint">Rispondi cliccando o premendo i tasti 1–7</p>
+  <div id="piano" hidden></div>
+  <p class="hint" id="hint">Rispondi cliccando o premendo i tasti 1–7</p>
   <button id="stopBtn">⏹ Stop</button>
 </div>
 
@@ -63,15 +83,23 @@ const NAMES_IT = ['Do','Re','Mi','Fa','Sol','La','Si'];
 const NAMES_EN = ['C','D','E','F','G','A','B'];
 const SEMI = [0,2,4,5,7,9,11];
 const CLEFS = {
-  treble:{name:'Violino',   glyph:'\u{1D11E}', bottom:30, clefY:150, fs:95},
-  bass:  {name:'Basso',     glyph:'\u{1D122}', bottom:18, clefY:145, fs:78},
-  alto:  {name:'Contralto', glyph:'\u{1D121}', bottom:24, clefY:150, fs:88},
-  tenor: {name:'Tenore',    glyph:'\u{1D121}', bottom:22, clefY:130, fs:88}
+  treble:{name:'Violino',   glyph:'\u{1D11E}', bottom:30, clefY:270, fs:95},
+  bass:  {name:'Basso',     glyph:'\u{1D122}', bottom:18, clefY:265, fs:78},
+  alto:  {name:'Contralto', glyph:'\u{1D121}', bottom:24, clefY:270, fs:88},
+  tenor: {name:'Tenore',    glyph:'\u{1D121}', bottom:22, clefY:250, fs:88}
 };
 const DEFAULT_RANGE = {treble:[28,39], bass:[14,25], alto:[21,32], tenor:[21,32]};
 
-const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null,
+const CHROMATIC_IT = ['Do','Do♯','Re','Re♯','Mi','Fa','Fa♯','Sol','Sol♯','La','La♯','Si'];
+const CHROMATIC_EN = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
+
+const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null, mode:'it',
                score:0, total:0, streak:0, best:0, awaiting:false, running:false};
+let analyser = null, micStream = null, micTimer = null;
+let stableCount = 0, lastCandidate = -999;
+
+function isMicMode(){ return state.mode.startsWith('mic'); }
+function isPianoMode(){ return state.mode.startsWith('piano'); }
 
 /* ---------- audio ---------- */
 let actx = null;
@@ -114,12 +142,16 @@ function wrongSound(){
 }
 
 /* ---------- staff rendering ---------- */
-function diaToY(d, clef){ return 190 - (d - CLEFS[clef].bottom) * 10; }
+function diaToY(d, clef){ return 310 - (d - CLEFS[clef].bottom) * 10; }
 function renderStaff(n){
   const c = CLEFS[state.clef];
+  const ny = diaToY(n.dia, state.clef);
+  const VIEW_H = 420;
+  const cY = Math.min(Math.max((ny + 270) / 2, -120 + VIEW_H / 2), 560 - VIEW_H / 2);
+  $('staff').setAttribute('viewBox', `0 ${cY - VIEW_H / 2} 600 ${VIEW_H}`);
   let s = '';
   for(let k = 0; k < 5; k++){
-    const y = 110 + k * 20;
+    const y = 230 + k * 20;
     s += `<line x1="40" y1="${y}" x2="560" y2="${y}" stroke="#8b949e" stroke-width="1.5"/>`;
   }
   const ledger = p => {
@@ -136,8 +168,8 @@ function renderStaff(n){
     for(let p = c.bottom - 2; p >= end; p -= 2) s += ledger(p);
   }
   s += `<text x="75" y="${c.clefY}" font-size="${c.fs}" fill="#e6edf3" text-anchor="middle" dominant-baseline="central" font-family="'Noto Music','Bravura','Segoe UI Symbol','Apple Symbols',serif">${c.glyph}</text>`;
-  s += `<text x="75" y="222" font-size="13" fill="#9aa4b2" text-anchor="middle">${c.name}</text>`;
-  const y = diaToY(n.dia, state.clef);
+  s += `<text x="75" y="342" font-size="13" fill="#9aa4b2" text-anchor="middle">${c.name}</text>`;
+  const y = ny;
   s += `<ellipse cx="300" cy="${y}" rx="10" ry="7" fill="#e6edf3" transform="rotate(-15 300 ${y})"/>`;
   $('staff').innerHTML = s;
 }
@@ -156,30 +188,109 @@ function nextNote(){
   state.cur = randNote();
   state.awaiting = true;
   renderStaff(state.cur);
-  playNote(midiFreq(state.cur));
+  if(!isMicMode()) playNote(midiFreq(state.cur));
 }
 function updateScore(){
   $('score').textContent = `✅ ${state.score}/${state.total} · 🔥 streak ${state.streak} · 🏆 best ${state.best}`;
 }
 function answer(i){
-  if(!state.awaiting) return;
+  if(!state.awaiting || !state.running) return;
+  const btn = document.querySelectorAll('#buttons button')[i];
+  answerValue(i === state.cur.i, btn);
+}
+function answerValue(ok, pressedIdx){
   state.awaiting = false;
-  const ok = i === state.cur.i;
   state.total++;
   if(ok){ state.score++; state.streak++; state.best = Math.max(state.best, state.streak); correctSound(); }
   else  { state.streak = 0; wrongSound(); }
   updateScore();
-  flash(ok, i);
+  flash(ok, pressedIdx);
   setTimeout(nextNote, ok ? 450 : 1000);
 }
-function flash(ok, i){
-  const btns = [...document.querySelectorAll('#buttons button')];
-  btns[state.cur.i].classList.add(ok ? 'ok' : 'reveal');
-  if(!ok) btns[i].classList.add('bad');
+function flash(ok, pressedEl){
+  let correctEl;
+  if(isPianoMode()) correctEl = document.querySelector(`.wkey[data-dia="${state.cur.dia}"]`);
+  else correctEl = document.querySelectorAll('#buttons button')[state.cur.i];
+  if(correctEl) correctEl.classList.add(ok ? 'ok' : 'reveal');
+  if(!ok && pressedEl) pressedEl.classList.add('bad');
   const fb = $('feedback');
   fb.textContent = ok ? '✔ Giusto!' : `✘ Era ${(state.it ? NAMES_IT : NAMES_EN)[state.cur.i]}${state.cur.o}`;
   fb.className = ok ? 'ok' : 'bad';
-  setTimeout(() => btns.forEach(b => b.classList.remove('ok','bad','reveal')), ok ? 400 : 950);
+  setTimeout(() => {
+    document.querySelectorAll('.note-btn,.wkey,.bkey').forEach(b => b.classList.remove('ok','bad','reveal'));
+  }, ok ? 400 : 950);
+}
+
+/* ---------- microfono ---------- */
+async function startMic(){
+  ensureAudio();
+  micStream = await navigator.mediaDevices.getUserMedia({
+    audio:{echoCancellation:false, noiseSuppression:false, autoGainControl:false}
+  });
+  const src = actx.createMediaStreamSource(micStream);
+  analyser = actx.createAnalyser();
+  analyser.fftSize = 2048;
+  src.connect(analyser);
+}
+function stopMic(){
+  if(micTimer){ clearInterval(micTimer); micTimer = null; }
+  if(micStream){ micStream.getTracks().forEach(t => t.stop()); micStream = null; }
+  analyser = null;
+}
+function midiFromFreq(f){ return 69 + 12 * Math.log2(f / 440); }
+function autoCorrelate(buf, sampleRate){
+  const SIZE = buf.length;
+  let rms = 0;
+  for(let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / SIZE);
+  if(rms < 0.015) return -1;
+  let r1 = 0, r2 = SIZE - 1;
+  const thres = 0.2;
+  for(let i = 0; i < SIZE / 2; i++) if(Math.abs(buf[i]) < thres){ r1 = i; break; }
+  for(let i = 1; i < SIZE / 2; i++) if(Math.abs(buf[SIZE - i]) < thres){ r2 = SIZE - i; break; }
+  const b = buf.slice(r1, r2);
+  const N = b.length;
+  if(N < 64) return -1;
+  const c = new Float32Array(N);
+  for(let i = 0; i < N; i++)
+    for(let j = 0; j < N - i; j++)
+      c[i] += b[j] * b[j + i];
+  let d = 0;
+  while(d < N - 1 && c[d] > c[d + 1]) d++;
+  let maxval = -1, maxpos = -1;
+  for(let i = d; i < N; i++){ if(c[i] > maxval){ maxval = c[i]; maxpos = i; } }
+  if(maxpos <= 0 || maxpos >= N - 1) return -1;
+  let T0 = maxpos;
+  const x1 = c[T0 - 1], x2 = c[T0], x3 = c[T0 + 1];
+  const a = (x1 + x3 - 2 * x2) / 2, bb = (x3 - x1) / 2;
+  if(a) T0 = T0 - bb / (2 * a);
+  return sampleRate / T0;
+}
+function micLoop(){
+  if(!state.running || !analyser) return;
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  const f = autoCorrelate(buf, actx.sampleRate);
+  const el = $('micStatus');
+  if(f > 0){
+    const m = midiFromFreq(f);
+    const cand = Math.round(m);
+    const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
+    const cents = Math.round((m - cand) * 100);
+    el.textContent = `🎤 ${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1} (${cents > 0 ? '+' : ''}${cents}¢)`;
+    if(cand === lastCandidate) stableCount++;
+    else { stableCount = 1; lastCandidate = cand; }
+    if(stableCount >= 4 && state.awaiting){
+      const ok = state.mode === 'mic-exact'
+        ? cand === noteMidi(state.cur)
+        : ((cand % 12) + 12) % 12 === SEMI[state.cur.i];
+      stableCount = 0; lastCandidate = -999;
+      answerValue(ok);
+    }
+  } else {
+    el.textContent = '🎤 Ascolto…';
+    stableCount = 0; lastCandidate = -999;
+  }
 }
 
 /* ---------- ui ---------- */
@@ -199,9 +310,54 @@ function relabel(){
     b.textContent = (state.it ? NAMES_IT : NAMES_EN)[i];
   });
 }
+function buildPiano(){
+  const box = $('piano');
+  box.innerHTML = '';
+  let dias = [];
+  if(state.mode === 'piano-relative'){
+    for(let i = 0; i < 7; i++) dias.push(28 + i);
+  } else {
+    const startOct = Math.floor(state.from / 7), endOct = Math.floor(state.to / 7);
+    for(let o = startOct; o <= endOct; o++)
+      for(let i = 0; i < 7; i++){
+        const dia = o * 7 + i;
+        if(dia >= state.from && dia <= state.to) dias.push(dia);
+      }
+  }
+  const rel = state.mode === 'piano-relative';
+  const SHARP_IT = {0:'Do♯',1:'Re♯',3:'Fa♯',4:'Sol♯',5:'La♯'};
+  const SHARP_EN = {0:'C♯',1:'D♯',3:'F♯',4:'G♯',5:'A♯'};
+  const sh = state.it ? SHARP_IT : SHARP_EN;
+  const N = dias.length, ww = 100 / N, bw = ww * 0.6;
+  dias.forEach(dia => {
+    const k = document.createElement('div');
+    k.className = 'wkey';
+    k.dataset.dia = dia;
+    k.addEventListener('click', () => pianoAnswer(dia, k));
+    box.appendChild(k);
+  });
+  for(let j = 0; j < N - 1; j++){
+    const lo = dias[j], i = lo % 7;
+    if(dias[j + 1] - lo !== 1 || !(i in sh)) continue;
+    const b = document.createElement('div');
+    b.className = 'bkey';
+    b.style.left = (((j + 1) * ww) - bw / 2) + '%';
+    b.style.width = bw + '%';
+    const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
+    b.addEventListener('click', () => playNote(midiFreq(midi)));
+    box.appendChild(b);
+  }
+}
+function pianoAnswer(dia, el){
+  if(!state.awaiting || !state.running) return;
+  const n = {dia, o:Math.floor(dia / 7), i:dia % 7};
+  playNote(midiFreq(noteMidi(n)));
+  const ok = state.mode === 'piano-exact' ? dia === state.cur.dia : n.i === state.cur.i;
+  answerValue(ok, el);
+}
 (function initRanges(){
   for(const sel of [$('rangeFrom'), $('rangeTo')]){
-    for(let d = 14; d <= 42; d++){
+    for(let d = 14; d <= 56; d++){
       const o = Math.floor(d / 7), i = d % 7;
       const opt = document.createElement('option');
       opt.value = d;
@@ -217,33 +373,51 @@ $('clef').addEventListener('change', () => {
   $('rangeFrom').value = a;
   $('rangeTo').value = b;
 });
-$('nameToggle').addEventListener('click', () => {
-  state.it = !state.it;
-  $('nameToggle').textContent = state.it ? 'Nomi: Do Re Mi' : 'Nomi: C D E F G A B';
-  relabel();
-});
-$('startBtn').addEventListener('click', () => {
+$('startBtn').addEventListener('click', async () => {
   ensureAudio();
+  state.mode = $('answerMode').value;
+  state.it = state.mode === 'it';
   let a = +$('rangeFrom').value, b = +$('rangeTo').value;
   if(a > b) [a,b] = [b,a];
   state.from = a; state.to = b;
   state.clef = $('clef').value;
   state.score = 0; state.total = 0; state.streak = 0; state.best = 0; state.last = null;
+  const mic = isMicMode(), piano = isPianoMode();
+  if(mic){
+    try {
+      await startMic();
+    } catch(err) {
+      $('feedback').className = 'bad';
+      $('feedback').textContent = '⚠ Impossibile accedere al microfono';
+      return;
+    }
+  }
   state.running = true;
   $('setup').hidden = true;
   $('game').hidden = false;
   $('feedback').textContent = '';
+  $('buttons').hidden = mic || piano;
+  $('piano').hidden = !piano;
+  $('micStatus').hidden = !mic;
+  $('hint').textContent =
+    mic  ? (state.mode === 'mic-exact'   ? 'Canta la nota esatta!' : 'Canta la nota: qualsiasi ottava va bene!') :
+    piano? (state.mode === 'piano-exact' ? 'Premi il tasto esatto!' : 'Premi il tasto giusto: qualsiasi ottava va bene!') :
+           'Rispondi cliccando o premendo i tasti 1–7';
+  if(mic){ stableCount = 0; lastCandidate = -999; micTimer = setInterval(micLoop, 80); }
+  else if(piano) buildPiano();
+  else relabel();
   updateScore();
   nextNote();
 });
 $('stopBtn').addEventListener('click', () => {
   state.running = false;
   state.awaiting = false;
+  stopMic();
   $('game').hidden = true;
   $('setup').hidden = false;
 });
 document.addEventListener('keydown', e => {
-  if($('game').hidden) return;
+  if($('game').hidden || isMicMode()) return;
   const n = parseInt(e.key, 10);
   if(n >= 1 && n <= 7) answer(n - 1);
 });
