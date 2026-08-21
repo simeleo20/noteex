@@ -1,0 +1,254 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Allenamento lettura note</title>
+<style>
+:root{color-scheme:dark}
+*{box-sizing:border-box}
+body{margin:0;font-family:system-ui,sans-serif;background:#11151c;color:#e6edf3;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
+h1{font-size:1.4rem;margin:8px 0 16px}
+.panel{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px}
+.panel label{font-size:.8rem;color:#9aa4b2;display:flex;flex-direction:column;gap:4px}
+select,button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-radius:8px;padding:8px 14px;font-size:.95rem;cursor:pointer}
+select:hover,button:hover{background:#30363d}
+.primary{background:#238636;border-color:#2ea043;font-weight:600}
+.primary:hover{background:#2ea043}
+#game{display:flex;flex-direction:column;align-items:center;width:100%;max-width:680px}
+#score{font-size:1rem;margin-bottom:6px;color:#c9d1d9}
+#staff{width:100%;max-width:640px;height:auto;background:#161b22;border:1px solid #30363d;border-radius:12px}
+#feedback{height:1.6rem;margin-top:8px;font-size:1.15rem;font-weight:700}
+#feedback.ok{color:#3fb950}
+#feedback.bad{color:#f85149}
+#buttons{display:flex;gap:8px;flex-wrap:wrap;justify-content:center;margin-top:10px}
+.note-btn{min-width:74px;padding:14px 10px;font-size:1.15rem;font-weight:600;border-radius:10px}
+.note-btn.ok{background:#238636;border-color:#3fb950;transform:scale(1.08)}
+.note-btn.bad{background:#b62324;border-color:#f85149;transform:scale(0.94)}
+.note-btn.reveal{border-color:#3fb950;color:#3fb950}
+.hint{color:#9aa4b2;font-size:.8rem;margin:10px 0 0}
+</style>
+</head>
+<body>
+<h1>🎼 Allenamento lettura note</h1>
+
+<div id="setup" class="panel">
+  <label>Chiave
+    <select id="clef">
+      <option value="treble">Violino</option>
+      <option value="bass">Basso</option>
+      <option value="alto">Contralto</option>
+      <option value="tenor">Tenore</option>
+    </select>
+  </label>
+  <label>Nota minima <select id="rangeFrom"></select></label>
+  <label>Nota massima <select id="rangeTo"></select></label>
+  <button id="nameToggle">Nomi: Do Re Mi</button>
+  <button id="startBtn" class="primary">▶ Inizia</button>
+</div>
+
+<div id="game" hidden>
+  <div id="score"></div>
+  <svg id="staff" viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg"></svg>
+  <div id="feedback"></div>
+  <div id="buttons"></div>
+  <p class="hint">Rispondi cliccando o premendo i tasti 1–7</p>
+  <button id="stopBtn">⏹ Stop</button>
+</div>
+
+<script>
+'use strict';
+const $ = id => document.getElementById(id);
+const NAMES_IT = ['Do','Re','Mi','Fa','Sol','La','Si'];
+const NAMES_EN = ['C','D','E','F','G','A','B'];
+const SEMI = [0,2,4,5,7,9,11];
+const CLEFS = {
+  treble:{name:'Violino',   glyph:'\u{1D11E}', bottom:30, clefY:150, fs:95},
+  bass:  {name:'Basso',     glyph:'\u{1D122}', bottom:18, clefY:145, fs:78},
+  alto:  {name:'Contralto', glyph:'\u{1D121}', bottom:24, clefY:150, fs:88},
+  tenor: {name:'Tenore',    glyph:'\u{1D121}', bottom:22, clefY:130, fs:88}
+};
+const DEFAULT_RANGE = {treble:[28,39], bass:[14,25], alto:[21,32], tenor:[21,32]};
+
+const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null,
+               score:0, total:0, streak:0, best:0, awaiting:false, running:false};
+
+/* ---------- audio ---------- */
+let actx = null;
+function ensureAudio(){
+  if(!actx) actx = new (window.AudioContext || window.webkitAudioContext)();
+  if(actx.state === 'suspended') actx.resume();
+}
+function tone(f, t0, dur, type, vol){
+  const o = actx.createOscillator(), g = actx.createGain();
+  o.type = type; o.frequency.value = f;
+  g.gain.setValueAtTime(0, t0);
+  g.gain.linearRampToValueAtTime(vol, t0 + 0.01);
+  g.gain.exponentialRampToValueAtTime(0.001, t0 + dur);
+  o.connect(g); g.connect(actx.destination);
+  o.start(t0); o.stop(t0 + dur + 0.05);
+}
+function midiFreq(m){ return 440 * Math.pow(2, (m - 69) / 12); }
+function playNote(freq){
+  ensureAudio();
+  tone(freq, actx.currentTime, 0.7, 'triangle', 0.22);
+}
+function correctSound(){
+  ensureAudio();
+  const t = actx.currentTime;
+  [523.25, 659.25, 783.99, 1046.5].forEach((f,k) => tone(f, t + k*0.07, 0.18, 'sine', 0.2));
+}
+function wrongSound(){
+  ensureAudio();
+  const t = actx.currentTime;
+  const o1 = actx.createOscillator(), o2 = actx.createOscillator();
+  const g = actx.createGain(), fl = actx.createBiquadFilter();
+  o1.type = 'sawtooth'; o2.type = 'sawtooth';
+  o1.frequency.setValueAtTime(220, t); o1.frequency.exponentialRampToValueAtTime(110, t + 0.45);
+  o2.frequency.setValueAtTime(233, t); o2.frequency.exponentialRampToValueAtTime(116, t + 0.45);
+  fl.type = 'lowpass'; fl.frequency.value = 900;
+  g.gain.setValueAtTime(0.28, t);
+  g.gain.exponentialRampToValueAtTime(0.001, t + 0.5);
+  o1.connect(fl); o2.connect(fl); fl.connect(g); g.connect(actx.destination);
+  o1.start(t); o2.start(t); o1.stop(t + 0.55); o2.stop(t + 0.55);
+}
+
+/* ---------- staff rendering ---------- */
+function diaToY(d, clef){ return 190 - (d - CLEFS[clef].bottom) * 10; }
+function renderStaff(n){
+  const c = CLEFS[state.clef];
+  let s = '';
+  for(let k = 0; k < 5; k++){
+    const y = 110 + k * 20;
+    s += `<line x1="40" y1="${y}" x2="560" y2="${y}" stroke="#8b949e" stroke-width="1.5"/>`;
+  }
+  const ledger = p => {
+    const y = diaToY(p, state.clef);
+    return `<line x1="272" y1="${y}" x2="328" y2="${y}" stroke="#8b949e" stroke-width="1.5"/>`;
+  };
+  const top = c.bottom + 8;
+  if(n.dia > top){
+    const end = n.dia + (((n.dia - c.bottom) % 2 === 0) ? 0 : 1);
+    for(let p = top + 2; p <= end; p += 2) s += ledger(p);
+  }
+  if(n.dia < c.bottom){
+    const end = n.dia - (((n.dia - c.bottom) % 2 === 0) ? 0 : 1);
+    for(let p = c.bottom - 2; p >= end; p -= 2) s += ledger(p);
+  }
+  s += `<text x="75" y="${c.clefY}" font-size="${c.fs}" fill="#e6edf3" text-anchor="middle" dominant-baseline="central" font-family="'Noto Music','Bravura','Segoe UI Symbol','Apple Symbols',serif">${c.glyph}</text>`;
+  s += `<text x="75" y="222" font-size="13" fill="#9aa4b2" text-anchor="middle">${c.name}</text>`;
+  const y = diaToY(n.dia, state.clef);
+  s += `<ellipse cx="300" cy="${y}" rx="10" ry="7" fill="#e6edf3" transform="rotate(-15 300 ${y})"/>`;
+  $('staff').innerHTML = s;
+}
+
+/* ---------- game logic ---------- */
+function randNote(){
+  let d;
+  do { d = state.from + Math.floor(Math.random() * (state.to - state.from + 1)); }
+  while(d === state.last && state.to > state.from);
+  state.last = d;
+  return {dia:d, o:Math.floor(d / 7), i:d % 7};
+}
+function noteMidi(n){ return 12 * (n.o + 1) + SEMI[n.i]; }
+function nextNote(){
+  if(!state.running) return;
+  state.cur = randNote();
+  state.awaiting = true;
+  renderStaff(state.cur);
+  playNote(midiFreq(state.cur));
+}
+function updateScore(){
+  $('score').textContent = `✅ ${state.score}/${state.total} · 🔥 streak ${state.streak} · 🏆 best ${state.best}`;
+}
+function answer(i){
+  if(!state.awaiting) return;
+  state.awaiting = false;
+  const ok = i === state.cur.i;
+  state.total++;
+  if(ok){ state.score++; state.streak++; state.best = Math.max(state.best, state.streak); correctSound(); }
+  else  { state.streak = 0; wrongSound(); }
+  updateScore();
+  flash(ok, i);
+  setTimeout(nextNote, ok ? 450 : 1000);
+}
+function flash(ok, i){
+  const btns = [...document.querySelectorAll('#buttons button')];
+  btns[state.cur.i].classList.add(ok ? 'ok' : 'reveal');
+  if(!ok) btns[i].classList.add('bad');
+  const fb = $('feedback');
+  fb.textContent = ok ? '✔ Giusto!' : `✘ Era ${(state.it ? NAMES_IT : NAMES_EN)[state.cur.i]}${state.cur.o}`;
+  fb.className = ok ? 'ok' : 'bad';
+  setTimeout(() => btns.forEach(b => b.classList.remove('ok','bad','reveal')), ok ? 400 : 950);
+}
+
+/* ---------- ui ---------- */
+function buildButtons(){
+  const box = $('buttons');
+  box.innerHTML = '';
+  for(let i = 0; i < 7; i++){
+    const b = document.createElement('button');
+    b.className = 'note-btn';
+    b.addEventListener('click', () => answer(i));
+    box.appendChild(b);
+  }
+  relabel();
+}
+function relabel(){
+  [...document.querySelectorAll('#buttons button')].forEach((b,i) => {
+    b.textContent = (state.it ? NAMES_IT : NAMES_EN)[i];
+  });
+}
+(function initRanges(){
+  for(const sel of [$('rangeFrom'), $('rangeTo')]){
+    for(let d = 14; d <= 42; d++){
+      const o = Math.floor(d / 7), i = d % 7;
+      const opt = document.createElement('option');
+      opt.value = d;
+      opt.textContent = `${NAMES_IT[i]}${o} (${NAMES_EN[i]}${o})`;
+      sel.appendChild(opt);
+    }
+  }
+  $('rangeFrom').value = 28;
+  $('rangeTo').value = 39;
+})();
+$('clef').addEventListener('change', () => {
+  const [a,b] = DEFAULT_RANGE[$('clef').value];
+  $('rangeFrom').value = a;
+  $('rangeTo').value = b;
+});
+$('nameToggle').addEventListener('click', () => {
+  state.it = !state.it;
+  $('nameToggle').textContent = state.it ? 'Nomi: Do Re Mi' : 'Nomi: C D E F G A B';
+  relabel();
+});
+$('startBtn').addEventListener('click', () => {
+  ensureAudio();
+  let a = +$('rangeFrom').value, b = +$('rangeTo').value;
+  if(a > b) [a,b] = [b,a];
+  state.from = a; state.to = b;
+  state.clef = $('clef').value;
+  state.score = 0; state.total = 0; state.streak = 0; state.best = 0; state.last = null;
+  state.running = true;
+  $('setup').hidden = true;
+  $('game').hidden = false;
+  $('feedback').textContent = '';
+  updateScore();
+  nextNote();
+});
+$('stopBtn').addEventListener('click', () => {
+  state.running = false;
+  state.awaiting = false;
+  $('game').hidden = true;
+  $('setup').hidden = false;
+});
+document.addEventListener('keydown', e => {
+  if($('game').hidden) return;
+  const n = parseInt(e.key, 10);
+  if(n >= 1 && n <= 7) answer(n - 1);
+});
+
+buildButtons();
+</script>
+</body>
+</html>
