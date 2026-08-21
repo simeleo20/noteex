@@ -39,3 +39,9 @@ Requires JDK 21 and the Android SDK (`ANDROID_HOME`).
 ## Support ☕
 
 If Note Exerciser helps you, consider [buying me a coffee](https://ko-fi.com/simelab). Donations keep the app free, ad-free and open.
+
+## License
+
+Copyright © 2026 simeleo20
+
+Released under the [GNU General Public License v3](LICENSE).
