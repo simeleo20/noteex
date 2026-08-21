@@ -10,7 +10,11 @@
 [hidden]{display:none!important}
 body{margin:0;font-family:system-ui,sans-serif;background:#11151c;color:#e6edf3;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
 h1{font-size:1.4rem;margin:8px 0 16px}
-.panel{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px}
+.panel{display:flex;flex-direction:column;gap:12px;align-items:center;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;width:100%;max-width:680px}
+#panelBody{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center}
+#summary{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;font-size:1rem}
+.mini-title{font-weight:800;font-size:1.05rem}
+#gearBtn{padding:6px 16px;font-size:1rem}
 .panel label{font-size:.8rem;color:#9aa4b2;display:flex;flex-direction:column;gap:4px}
 .panel label.chk{flex-direction:row;align-items:center;gap:6px;font-size:.9rem;color:#e6edf3;padding-bottom:8px}
 .panel label.chk input{width:16px;height:16px}
@@ -39,38 +43,57 @@ select:hover,button:hover{background:#30363d}
 .wkey.bad,.bkey.bad{background:#f85149!important;color:#2d0505}
 .wkey.reveal{box-shadow:inset 0 0 0 3px #238636}
 .hint{color:#9aa4b2;font-size:.8rem;margin:10px 0 0}
+.kofi{flex-basis:100%;text-align:center;color:#9aa4b2;font-size:.8rem;text-decoration:none}
+.kofi:hover{color:#e6edf3}
+@media (max-width:600px){
+  h1{font-size:1.05rem;margin:4px 0 10px}
+  .panel{padding:10px 12px}
+  .note-btn{min-width:58px;padding:12px 6px;font-size:1.05rem}
+  #piano{height:130px}
+  .hint{margin-top:6px}
+}
 </style>
 </head>
 <body>
 <h1>🎼 Note Exerciser</h1>
 
 <div id="setup" class="panel">
-  <label>Clef
-    <select id="clef">
-      <option value="treble">Treble</option>
-      <option value="bass">Bass</option>
-      <option value="alto">Alto</option>
-      <option value="tenor">Tenor</option>
-    </select>
-  </label>
-  <label>Lowest note <select id="rangeFrom"></select></label>
-  <label>Highest note <select id="rangeTo"></select></label>
-  <label>Answer mode
-    <select id="answerMode">
-      <option value="it">Buttons · Solfège (Do Re Mi)</option>
-      <option value="en">Buttons · Letters (C D E F G A B)</option>
-      <option value="mic-relative">Microphone · relative</option>
-      <option value="mic-exact">Microphone · exact</option>
-      <option value="piano-relative">Piano · relative</option>
-      <option value="piano-exact">Piano · exact</option>
-    </select>
-  </label>
-  <label class="chk"><input type="checkbox" id="pianoLabels" checked> Key labels</label>
-  <button id="startBtn" class="primary">▶ Start</button>
+  <div id="summary" hidden>
+    <span class="mini-title">🎼 Note Exerciser</span>
+    <span id="score"></span>
+    <button id="gearBtn" title="Settings">⚙</button>
+  </div>
+  <div id="panelBody">
+    <label>Clef
+      <select id="clef">
+        <option value="treble">Treble</option>
+        <option value="bass">Bass</option>
+        <option value="alto">Alto</option>
+        <option value="tenor">Tenor</option>
+      </select>
+    </label>
+    <label>Lowest note <select id="rangeFrom"></select></label>
+    <label>Highest note <select id="rangeTo"></select></label>
+    <label>Answer mode
+      <select id="answerMode">
+        <option value="it">Buttons · Solfège (Do Re Mi)</option>
+        <option value="en">Buttons · Letters (C D E F G A B)</option>
+        <option value="mic-relative">Microphone · relative</option>
+        <option value="mic-exact">Microphone · exact</option>
+        <option value="piano-relative">Piano · relative</option>
+        <option value="piano-exact">Piano · exact</option>
+      </select>
+    </label>
+    <label class="chk"><input type="checkbox" id="pianoLabels" checked> Key labels</label>
+    <label class="chk"><input type="checkbox" id="optMistakes"> Repeat mistakes</label>
+    <label class="chk"><input type="checkbox" id="optLeaps"> Big leaps</label>
+    <button id="startBtn" class="primary">▶ Start</button>
+    <button id="collapseBtn" hidden>▲ Collapse</button>
+    <a id="kofiLink" class="kofi" href="https://ko-fi.com/simelab" target="_blank" rel="noopener">☕ Support this project</a>
+  </div>
 </div>
 
 <div id="game" hidden>
-  <div id="score"></div>
   <svg id="staff" viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg"></svg>
   <div id="micStatus" hidden></div>
   <div id="feedback"></div>
@@ -98,9 +121,17 @@ const CHROMATIC_IT = ['Do','Do♯','Re','Re♯','Mi','Fa','Fa♯','Sol','Sol♯'
 const CHROMATIC_EN = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 
 const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null, mode:'it',
-               score:0, total:0, streak:0, best:0, awaiting:false, running:false};
+               score:0, total:0, streak:0, best:0, awaiting:false, running:false, locked:false, lockPitch:-999,
+               repeatMistakes:false, bigLeaps:false};
+const mistakes = {};
 let analyser = null, micStream = null, micTimer = null;
 let stableCount = 0, lastCandidate = -999;
+let lockFrames = 0, silentFrames = 0;
+function unlockMic(){
+  state.locked = false;
+  lockFrames = 0; silentFrames = 0;
+  stableCount = 0; lastCandidate = -999;
+}
 
 function isMicMode(){ return state.mode.startsWith('mic'); }
 function isPianoMode(){ return state.mode.startsWith('piano'); }
@@ -181,8 +212,27 @@ function renderStaff(n){
 /* ---------- game logic ---------- */
 function randNote(){
   let d;
-  do { d = state.from + Math.floor(Math.random() * (state.to - state.from + 1)); }
-  while(d === state.last && state.to > state.from);
+  if(state.repeatMistakes || state.bigLeaps){
+    const cands = [];
+    for(let c = state.from; c <= state.to; c++){
+      if(c === state.last && state.to > state.from) continue;
+      let w = 1;
+      if(state.repeatMistakes) w *= Math.sqrt(mistakes[c] || 1);
+      if(state.bigLeaps){
+        const dist = state.last === null ? state.to - state.from : Math.abs(c - state.last);
+        w *= (dist + 1) * (dist + 1);
+      }
+      cands.push([c, w]);
+    }
+    let total = 0;
+    for(const [,w] of cands) total += w;
+    let r = Math.random() * total;
+    d = cands[cands.length - 1][0];
+    for(const [c,w] of cands){ r -= w; if(r <= 0){ d = c; break; } }
+  } else {
+    do { d = state.from + Math.floor(Math.random() * (state.to - state.from + 1)); }
+    while(d === state.last && state.to > state.from);
+  }
   state.last = d;
   return {dia:d, o:Math.floor(d / 7), i:d % 7};
 }
@@ -205,8 +255,14 @@ function answer(i){
 function answerValue(ok, pressedIdx){
   state.awaiting = false;
   state.total++;
-  if(ok){ state.score++; state.streak++; state.best = Math.max(state.best, state.streak); correctSound(); }
-  else  { state.streak = 0; wrongSound(); }
+  const k = state.cur.dia;
+  if(ok){
+    state.score++; state.streak++; state.best = Math.max(state.best, state.streak); correctSound();
+    if(state.repeatMistakes) mistakes[k] = Math.max(1, (mistakes[k] || 1) - 1);
+  } else {
+    state.streak = 0; wrongSound();
+    if(state.repeatMistakes) mistakes[k] = (mistakes[k] || 1) + 4;
+  }
   updateScore();
   flash(ok, pressedIdx);
   setTimeout(nextNote, ok ? 450 : 1000);
@@ -281,7 +337,16 @@ function micLoop(){
     const cand = Math.round(m);
     const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
     const cents = Math.round((m - cand) * 100);
-    el.textContent = `🎤 ${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1} (${cents > 0 ? '+' : ''}${cents}¢)`;
+    el.textContent = `🎤 ${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1} (${cents > 0 ? '+' : ''}${cents}¢)${state.locked ? ' ⏸' : ''}`;
+    if(state.locked){
+      silentFrames = 0;
+      if(cand === state.lockPitch){ lockFrames = 0; }
+      else {
+        lockFrames++;
+        if(lockFrames >= 3) unlockMic();
+      }
+      return;
+    }
     if(cand === lastCandidate) stableCount++;
     else { stableCount = 1; lastCandidate = cand; }
     if(stableCount >= 4 && state.awaiting){
@@ -289,11 +354,16 @@ function micLoop(){
         ? cand === noteMidi(state.cur)
         : ((cand % 12) + 12) % 12 === SEMI[state.cur.i];
       stableCount = 0; lastCandidate = -999;
+      state.locked = true; state.lockPitch = cand; lockFrames = 0;
       answerValue(ok);
     }
   } else {
-    el.textContent = '🎤 Listening…';
+    el.textContent = state.locked ? '🎤 ⏸' : '🎤 Listening…';
     stableCount = 0; lastCandidate = -999;
+    if(state.locked){
+      silentFrames++;
+      if(silentFrames >= 2) unlockMic();
+    }
   }
 }
 
@@ -390,6 +460,10 @@ $('startBtn').addEventListener('click', async () => {
   state.from = a; state.to = b;
   state.clef = $('clef').value;
   state.score = 0; state.total = 0; state.streak = 0; state.best = 0; state.last = null;
+  state.locked = false; lockFrames = 0; silentFrames = 0;
+  state.repeatMistakes = $('optMistakes').checked;
+  state.bigLeaps = $('optLeaps').checked;
+  for(const k in mistakes) delete mistakes[k];
   const mic = isMicMode(), piano = isPianoMode();
   if(mic){
     try {
@@ -413,14 +487,30 @@ $('startBtn').addEventListener('click', async () => {
   if(mic){ stableCount = 0; lastCandidate = -999; micTimer = setInterval(micLoop, 80); }
   else if(piano) buildPiano();
   else relabel();
+  collapsePanel();
   updateScore();
   nextNote();
+});
+function collapsePanel(){
+  $('summary').hidden = false;
+  $('panelBody').hidden = true;
+}
+$('gearBtn').addEventListener('click', () => {
+  $('summary').hidden = true;
+  $('panelBody').hidden = false;
+  $('collapseBtn').hidden = !state.running;
+});
+$('collapseBtn').addEventListener('click', () => {
+  if(state.running) collapsePanel();
 });
 $('stopBtn').addEventListener('click', () => {
   state.running = false;
   state.awaiting = false;
   stopMic();
   $('game').hidden = true;
+  $('summary').hidden = true;
+  $('panelBody').hidden = false;
+  $('collapseBtn').hidden = true;
 });
 document.addEventListener('keydown', e => {
   if($('game').hidden || isMicMode()) return;

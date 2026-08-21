@@ -1,0 +1,11 @@
+{
+  "appId": "com.simelab.noteex",
+  "appName": "Noteex",
+  "webDir": "www",
+  "android": {
+    "allowMixedContent": false
+  },
+  "server": {
+    "androidScheme": "https"
+  }
+}

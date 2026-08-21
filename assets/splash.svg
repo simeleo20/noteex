@@ -1,0 +1,16 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="2732" height="2732">
+  <rect width="2732" height="2732" fill="#11151c"/>
+  <g transform="translate(766,700) scale(1.17)">
+    <g stroke="#8b949e" stroke-width="14" stroke-linecap="round">
+      <line x1="0" y1="0" x2="1200" y2="0" transform="translate(0,0)"/>
+      <line x1="0" y1="0" x2="1200" y2="0" transform="translate(0,105)"/>
+      <line x1="0" y1="0" x2="1200" y2="0" transform="translate(0,210)"/>
+      <line x1="0" y1="0" x2="1200" y2="0" transform="translate(0,315)"/>
+      <line x1="0" y1="0" x2="1200" y2="0" transform="translate(0,420)"/>
+    </g>
+    <ellipse cx="260" cy="298" rx="90" ry="64" fill="#ffffff" transform="rotate(-15 260 298)"/>
+    <rect x="328" y="-32" width="28" height="330" fill="#ffffff"/>
+    <path d="M356,-32 q130,45 118,185 q-25,-95 -118,-105 z" fill="#3fb950"/>
+  </g>
+  <text x="1366" y="1750" font-family="system-ui,sans-serif" font-size="170" font-weight="700" fill="#e6edf3" text-anchor="middle">Noteex</text>
+</svg>
