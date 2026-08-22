@@ -22,7 +22,7 @@ select,button{background:#21262d;color:#e6edf3;border:1px solid #30363d;border-r
 select:hover,button:hover{background:#30363d}
 .primary{background:#238636;border-color:#2ea043;font-weight:600}
 .primary:hover{background:#2ea043}
-#game{display:flex;flex-direction:column;align-items:center;width:100%;max-width:680px}
+#game{display:flex;flex-direction:column;align-items:center;width:100%}
 #score{font-size:1rem;margin-bottom:6px;color:#c9d1d9}
 #staff{width:100%;max-width:640px;height:auto;background:#161b22;border:1px solid #30363d;border-radius:12px}
 #feedback{height:1.6rem;margin-top:8px;font-size:1.15rem;font-weight:700}
@@ -182,9 +182,6 @@ function diaToY(d, clef){ return 310 - (d - CLEFS[clef].bottom) * 10; }
 function renderStaff(n){
   const c = CLEFS[state.clef];
   const ny = diaToY(n.dia, state.clef);
-  const VIEW_H = 420;
-  const cY = Math.min(Math.max((ny + 270) / 2, -120 + VIEW_H / 2), 560 - VIEW_H / 2);
-  $('staff').setAttribute('viewBox', `0 ${cY - VIEW_H / 2} 600 ${VIEW_H}`);
   let s = '';
   for(let k = 0; k < 5; k++){
     const y = 230 + k * 20;
@@ -207,6 +204,12 @@ function renderStaff(n){
   const y = ny;
   s += `<ellipse cx="300" cy="${y}" rx="10" ry="7" fill="#e6edf3" transform="rotate(-15 300 ${y})"/>`;
   $('staff').innerHTML = s;
+  let half = 62;
+  try {
+    const bb = $('staff').getBBox();
+    if(bb.height > 0) half = Math.max(half, 270 - bb.y, bb.y + bb.height - 270);
+  } catch(e){}
+  $('staff').setAttribute('viewBox', `0 ${Math.round(270 - half - 10)} 600 ${Math.round(2 * (half + 10))}`);
 }
 
 /* ---------- game logic ---------- */
@@ -327,7 +330,7 @@ function autoCorrelate(buf, sampleRate){
   return sampleRate / T0;
 }
 function micLoop(){
-  if(!state.running || !analyser) return;
+  if(!state.running || !isMicMode() || !analyser) return;
   const buf = new Float32Array(analyser.fftSize);
   analyser.getFloatTimeDomainData(buf);
   const f = autoCorrelate(buf, actx.sampleRate);
@@ -392,7 +395,7 @@ function buildPiano(){
     for(let i = 0; i < 7; i++) dias.push(28 + i);
   } else {
     const start = Math.floor(state.from / 7) * 7;
-    const end = Math.floor(state.to / 7) * 7 + 6;
+    const end = state.to % 7 === 0 ? state.to : Math.floor(state.to / 7) * 7 + 6;
     for(let dia = start; dia <= end; dia++) dias.push(dia);
   }
   const rel = state.mode === 'piano-relative';
@@ -409,17 +412,24 @@ function buildPiano(){
     curSeg.push(dia);
   });
   if(curSeg.length) segs.push(curSeg);
-  const R = Math.max(1, Math.ceil(N / 14));
-  let cap = Math.max(...segs.map(s => s.length));
-  const fits = M => {
-    let r = 1, a = 0;
-    for(const g of segs){
-      if(a + g.length > M){ r++; a = 0; }
-      a += g.length;
-    }
-    return r <= R;
+  const availW = Math.max(280, Math.min(document.documentElement.clientWidth - 32, 1400));
+  const minKeyW = 34;
+  const packMax = R => {
+    let lo = Math.max(...segs.map(s => s.length)), hi = N;
+    const fitsRows = M => {
+      let r = 1, a = 0;
+      for(const g of segs){
+        if(a + g.length > M){ r++; a = 0; }
+        a += g.length;
+      }
+      return r <= R;
+    };
+    while(lo < hi){ const m = (lo + hi) >> 1; if(fitsRows(m)) hi = m; else lo = m + 1; }
+    return lo;
   };
-  while(cap < N && !fits(cap)) cap++;
+  let R = 1;
+  while(R < segs.length && packMax(R) * minKeyW > availW) R++;
+  const cap = packMax(R);
   const rows = [];
   let row = [], acc = 0;
   for(const g of segs){
@@ -431,6 +441,7 @@ function buildPiano(){
   const multiRow = rows.length > 1;
   const maxLen = Math.max(...rows.map(r => r.length));
   const gw = 100 / maxLen, gb = gw * 0.6;
+  box.style.maxWidth = (multiRow || N > 14) ? availW + 'px' : '';
   rows.forEach(rowDias => {
     const row = document.createElement('div');
     row.className = 'prow';
@@ -470,6 +481,11 @@ function pianoAnswer(dia, el){
   const ok = state.mode === 'piano-exact' ? dia === state.cur.dia : n.i === state.cur.i;
   answerValue(ok, el);
 }
+let rzT;
+addEventListener('resize', () => {
+  clearTimeout(rzT);
+  rzT = setTimeout(() => { if(state.running && isPianoMode()) buildPiano(); }, 150);
+});
 (function initRanges(){
   for(const sel of [$('rangeFrom'), $('rangeTo')]){
     for(let d = 14; d <= 56; d++){
@@ -490,6 +506,7 @@ $('clef').addEventListener('change', () => {
 });
 $('startBtn').addEventListener('click', async () => {
   ensureAudio();
+  stopMic();
   state.mode = $('answerMode').value;
   state.it = state.mode === 'it';
   let a = +$('rangeFrom').value, b = +$('rangeTo').value;
