@@ -441,7 +441,7 @@ function multiPitch(specDb, sampleRate, fftSize){
     if(m[i] > gmax) gmax = m[i];
   }
   if(gmax <= 0 || sumSq <= 0 || gmax * gmax / sumSq < 0.06) return [];
-  const floorAmp = gmax * 0.05;
+  const floorAmp = gmax * 0.12;
   const cands = [];
   for(let i = 2; i < n - 2; i++){
     if(m[i] > m[i - 1] && m[i] >= m[i + 1] && m[i] >= floorAmp){
@@ -453,6 +453,13 @@ function multiPitch(specDb, sampleRate, fftSize){
   }
   cands.sort((x, y) => y.a - x.a);
   const near = (f, ref, cents) => ref > 0 && Math.abs(1200 * Math.log2(f / ref)) < cents;
+  function magNear(f){
+    let best = 0;
+    const lo = Math.max(1, Math.floor(f * 0.9797 / binHz));
+    const hi = Math.min(n - 1, Math.ceil(f * 1.0203 / binHz));
+    for(let i = lo; i <= hi; i++) if(m[i] > best) best = m[i];
+    return best;
+  }
   const notes = [];
   for(const c of cands){
     if(notes.length >= 3) break;
@@ -466,16 +473,22 @@ function multiPitch(specDb, sampleRate, fftSize){
       if(isHarmonic) break;
     }
     if(isHarmonic) continue;
-    let f0 = c.f, fa = c.a, moved = true;
-    while(moved){
-      moved = false;
-      for(const q of cands){
-        if(q.a < 0.6 * fa || !near(q.f, f0 / 2, 45)) continue;
-        f0 = q.f; fa = q.a; moved = true;
-        break;
+    if(!notes.length){
+      let f0 = c.f, fa = c.a, moved = true;
+      while(moved){
+        moved = false;
+        for(const q of cands){
+          if(q.a < 0.6 * fa || !near(q.f, f0 / 2, 45)) continue;
+          f0 = q.f; fa = q.a; moved = true;
+          break;
+        }
       }
+      notes.push({f:f0, a:fa});
+      continue;
     }
-    notes.push({f:f0, a:fa});
+    const support = Math.max(magNear(c.f * 2), magNear(c.f * 3));
+    if(support < 0.18 * c.a && c.a < 0.55 * gmax) continue;
+    notes.push({f:c.f, a:c.a});
   }
   return notes;
 }
@@ -779,10 +792,12 @@ $('homeBtn').addEventListener('click', showHome);
 
 /* ---------- listen mode (real-time note detector) ---------- */
 const det = {running:false};
+const detStable = new Map();
 let detLastMidi = -999;
 const detGate = () => 0.065 - 0.005 * (+$('detSens').value);
 function stopDetect(){
   if(det.running){ det.running = false; stopMic(); }
+  detStable.clear();
   document.querySelectorAll('#dpiano .ok').forEach(k => k.classList.remove('ok'));
   $('detect').hidden = true;
 }
@@ -803,16 +818,29 @@ function detLoop(){
   }
   const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
   if(notes.length){
-    const seen = new Set(), parts = [];
+    const thisFrame = new Set(), parts = [];
     for(const nt of notes){
       const cand = Math.round(midiFromFreq(nt.f));
-      if(seen.has(cand)) continue;
-      seen.add(cand);
+      if(thisFrame.has(cand)) continue;
+      thisFrame.add(cand);
+      detStable.set(cand, Math.min((detStable.get(cand) || 0) + 1, 3));
+    }
+    for(const [k, v] of detStable)
+      if(!thisFrame.has(k)){
+        if(v <= 1) detStable.delete(k);
+        else detStable.set(k, v - 2);
+      }
+    const shown = notes.filter(nt => {
+      const c = Math.round(midiFromFreq(nt.f));
+      return !parts.length || (detStable.get(c) || 0) >= 2;
+    });
+    for(const nt of shown){
+      const cand = Math.round(midiFromFreq(nt.f));
       parts.push(`${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1}`);
       const key = document.querySelector(`#dpiano [data-midi="${cand}"]`);
       if(key) key.classList.add('ok');
     }
-    const pm = midiFromFreq(notes[0].f), pc = Math.round(pm);
+    const pm = midiFromFreq(shown[0].f), pc = Math.round(pm);
     const cents = Math.round((pm - pc) * 100);
     detLastMidi = pc;
     $('detNote').textContent = parts.join(' · ');
@@ -823,6 +851,7 @@ function detLoop(){
     $('detStatus').textContent = '🎤 Listening…';
   } else {
     detLastMidi = -999;
+    detStable.clear();
     $('detNote').textContent = '—';
     $('detNote').classList.remove('multi');
     $('detCents').innerHTML = '&nbsp;';
