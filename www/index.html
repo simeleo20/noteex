@@ -466,7 +466,10 @@ function multiPitch(specDb, sampleRate, fftSize){
     let isHarmonic = false;
     for(const nt of notes){
       for(let k = 1; k <= 12; k++)
-        if(near(c.f, nt.f * k, 35)){ isHarmonic = true; break; }
+        if(near(c.f, nt.f * k, 35)){
+          isHarmonic = !(k === 2 && c.a >= 0.75 * nt.a && c.a >= 0.6 * gmax);
+          break;
+        }
       if(!isHarmonic)
         for(let k = 2; k <= 4; k++)
           if(near(c.f, nt.f / k, 35)){ isHarmonic = true; break; }
@@ -484,6 +487,8 @@ function multiPitch(specDb, sampleRate, fftSize){
         }
       }
       notes.push({f:f0, a:fa});
+      if(near(c.f, f0 * 2, 35) && c.a >= 0.75 * fa && c.a >= 0.6 * gmax)
+        notes.push({f:c.f, a:c.a});
       continue;
     }
     const support = Math.max(magNear(c.f * 2), magNear(c.f * 3));
