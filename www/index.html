@@ -46,12 +46,29 @@ select:hover,button:hover{background:#30363d}
 .hint{color:#9aa4b2;font-size:.8rem;margin:10px 0 0}
 .kofi{flex-basis:100%;text-align:center;color:#9aa4b2;font-size:.8rem;text-decoration:none}
 .kofi:hover{color:#e6edf3}
+#detect{display:flex;flex-direction:column;align-items:center;width:100%;gap:10px}
+.det-note{font-size:3.2rem;font-weight:800;line-height:1.05}
+.det-cents{height:1.3rem;color:#9aa4b2;font-size:1rem}
+#tuner{position:relative;width:100%;max-width:480px;height:46px;background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
+#tuner .band{position:absolute;left:46%;top:0;bottom:0;width:8%;background:rgba(63,185,80,.22)}
+#tuner .tick{position:absolute;top:0;bottom:0;width:1px;background:#30363d}
+#tuner .tick.mid{background:#3fb950}
+#tuner .tlab{position:absolute;bottom:2px;font-size:.62rem;color:#6e7681;transform:translateX(-50%)}
+#needle{position:absolute;top:0;bottom:0;width:4px;margin-left:-2px;background:#79c0ff;border-radius:2px;left:50%;transition:left .08s linear}
+#lvl{width:100%;max-width:480px;height:6px;background:#21262d;border-radius:3px;overflow:hidden}
+#lvl i{display:block;height:100%;width:0;background:#79c0ff}
+#detStatus{height:1.6rem;font-weight:700;color:#79c0ff;font-size:1.1rem}
+#detStatus.err{color:#f85149}
+#dpiano{display:flex;flex-direction:column;width:100%;max-width:640px;user-select:none}
+.det-row{display:flex;gap:10px;align-items:center;font-size:.85rem;color:#9aa4b2;flex-wrap:wrap;justify-content:center}
+input[type=range]{accent-color:#238636}
 @media (max-width:600px){
   h1{font-size:1.05rem;margin:4px 0 10px}
   .panel{padding:10px 12px}
   .note-btn{min-width:58px;padding:12px 6px;font-size:1.05rem}
   .prow{height:130px}
   .hint{margin-top:6px}
+  .det-note{font-size:2.4rem}
 }
 </style>
 </head>
@@ -89,6 +106,7 @@ select:hover,button:hover{background:#30363d}
     <label class="chk"><input type="checkbox" id="optMistakes"> Repeat mistakes</label>
     <label class="chk"><input type="checkbox" id="optLeaps"> Big leaps</label>
     <button id="startBtn" class="primary">▶ Start</button>
+    <button id="detectBtn">🎧 Listen</button>
     <button id="collapseBtn" hidden>▲ Collapse</button>
     <a id="kofiLink" class="kofi" href="https://ko-fi.com/simelab" target="_blank" rel="noopener">☕ Support this project</a>
   </div>
@@ -103,6 +121,34 @@ select:hover,button:hover{background:#30363d}
   <p class="hint" id="hint">Answer by clicking or pressing keys 1–7</p>
   <button id="stopBtn">⏹ Stop</button>
 </div>
+
+<section id="detect" hidden>
+  <div class="det-row">
+    <span>Mic sensitivity</span>
+    <input type="range" id="detSens" min="1" max="12" step="1" value="9">
+  </div>
+  <div class="det-note" id="detNote">—</div>
+  <div class="det-cents" id="detCents">&nbsp;</div>
+  <div id="tuner">
+    <div class="band"></div>
+    <div class="tick" style="left:0%"></div>
+    <div class="tick" style="left:25%"></div>
+    <div class="tick mid" style="left:50%"></div>
+    <div class="tick" style="left:75%"></div>
+    <div class="tick" style="left:100%"></div>
+    <span class="tlab" style="left:2%">−50¢</span>
+    <span class="tlab" style="left:25%">−25¢</span>
+    <span class="tlab" style="left:50%">0</span>
+    <span class="tlab" style="left:75%">+25¢</span>
+    <span class="tlab" style="left:98%">+50¢</span>
+    <div id="needle"></div>
+  </div>
+  <div id="lvl"><i></i></div>
+  <div id="detStatus">🎤 Listening…</div>
+  <div id="dpiano"></div>
+  <p class="hint">Play any instrument — notes appear live. Tap keys to hear reference pitches.</p>
+  <button id="detStop">⏹ Back</button>
+</section>
 
 <script>
 'use strict';
@@ -301,12 +347,12 @@ function stopMic(){
   analyser = null;
 }
 function midiFromFreq(f){ return 69 + 12 * Math.log2(f / 440); }
-function autoCorrelate(buf, sampleRate){
+function autoCorrelate(buf, sampleRate, minRms = 0.015){
   const SIZE = buf.length;
   let rms = 0;
   for(let i = 0; i < SIZE; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / SIZE);
-  if(rms < 0.015) return -1;
+  if(rms < minRms) return -1;
   let r1 = 0, r2 = SIZE - 1;
   const thres = 0.2;
   for(let i = 0; i < SIZE / 2; i++) if(Math.abs(buf[i]) < thres){ r1 = i; break; }
@@ -387,18 +433,17 @@ function relabel(){
     b.textContent = (state.it ? NAMES_IT : NAMES_EN)[i];
   });
 }
-function buildPiano(){
-  const box = $('piano');
+function buildPiano(box = $('piano'), forceRange = false){
   box.innerHTML = '';
   let dias = [];
-  if(state.mode === 'piano-relative'){
+  const rel = !forceRange && state.mode === 'piano-relative';
+  if(rel){
     for(let i = 0; i < 7; i++) dias.push(28 + i);
   } else {
     const start = Math.floor(state.from / 7) * 7;
     const end = state.to % 7 === 0 ? state.to : Math.floor(state.to / 7) * 7 + 6;
     for(let dia = start; dia <= end; dia++) dias.push(dia);
   }
-  const rel = state.mode === 'piano-relative';
   const showLabels = $('pianoLabels').checked;
   const names = state.it ? NAMES_IT : NAMES_EN;
   const SHARP_IT = {0:'Do♯',1:'Re♯',3:'Fa♯',4:'Sol♯',5:'La♯'};
@@ -455,6 +500,7 @@ function buildPiano(){
       k.className = 'wkey';
       k.style.flex = `0 1 ${gw}%`;
       k.dataset.dia = dia;
+      k.dataset.midi = 12 * (Math.floor(dia / 7) + 1) + SEMI[dia % 7];
       if(showLabels) k.textContent = names[dia % 7] + (rel ? '' : Math.floor(dia / 7));
       k.addEventListener('click', () => pianoAnswer(dia, k));
       row.appendChild(k);
@@ -468,6 +514,7 @@ function buildPiano(){
       b.style.width = gb + '%';
       if(showLabels) b.textContent = sh[i];
       const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
+      b.dataset.midi = midi;
       b.addEventListener('click', () => playNote(midiFreq(midi)));
       row.appendChild(b);
     }
@@ -484,7 +531,10 @@ function pianoAnswer(dia, el){
 let rzT;
 addEventListener('resize', () => {
   clearTimeout(rzT);
-  rzT = setTimeout(() => { if(state.running && isPianoMode()) buildPiano(); }, 150);
+  rzT = setTimeout(() => {
+    if(state.running && isPianoMode()) buildPiano();
+    else if(det.running) buildPiano($('dpiano'), true);
+  }, 150);
 });
 (function initRanges(){
   for(const sel of [$('rangeFrom'), $('rangeTo')]){
@@ -506,6 +556,7 @@ $('clef').addEventListener('change', () => {
 });
 $('startBtn').addEventListener('click', async () => {
   ensureAudio();
+  stopDetect();
   stopMic();
   state.mode = $('answerMode').value;
   state.it = state.mode === 'it';
@@ -571,6 +622,71 @@ document.addEventListener('keydown', e => {
   const n = parseInt(e.key, 10);
   if(n >= 1 && n <= 7) answer(n - 1);
 });
+
+/* ---------- listen mode (real-time note detector) ---------- */
+const det = {running:false};
+let detLastMidi = -999;
+const detGate = () => 0.065 - 0.005 * (+$('detSens').value);
+function stopDetect(){
+  if(det.running){ det.running = false; stopMic(); }
+  document.querySelectorAll('#dpiano .ok').forEach(k => k.classList.remove('ok'));
+  $('detect').hidden = true;
+}
+function detLoop(){
+  if(!det.running || !analyser) return;
+  const buf = new Float32Array(analyser.fftSize);
+  analyser.getFloatTimeDomainData(buf);
+  let rms = 0;
+  for(let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
+  rms = Math.sqrt(rms / buf.length);
+  $('lvl').firstElementChild.style.width = Math.min(100, rms * 500) + '%';
+  const f = autoCorrelate(buf, actx.sampleRate, detGate());
+  const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
+  document.querySelectorAll('#dpiano .ok').forEach(k => k.classList.remove('ok'));
+  if(f > 0){
+    const m = midiFromFreq(f);
+    const cand = Math.round(m);
+    const cents = Math.round((m - cand) * 100);
+    detLastMidi = cand;
+    $('detNote').textContent = `${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1}`;
+    $('detCents').textContent = `${cents > 0 ? '+' : ''}${cents}¢`;
+    $('needle').style.left = (50 + Math.max(-50, Math.min(50, cents))) + '%';
+    const key = document.querySelector(`#dpiano [data-midi="${cand}"]`);
+    if(key) key.classList.add('ok');
+    $('detStatus').className = '';
+    $('detStatus').textContent = '🎤 Listening…';
+  } else {
+    detLastMidi = -999;
+    $('detNote').textContent = '—';
+    $('detCents').innerHTML = '&nbsp;';
+    $('needle').style.left = '50%';
+    $('detStatus').className = 'err';
+    $('detStatus').textContent = rms >= detGate() ? '🎤 Too much noise — raise sensitivity?' : '🎤 Listening…';
+  }
+}
+$('detectBtn').addEventListener('click', async () => {
+  ensureAudio();
+  stopDetect();
+  state.running = false; state.awaiting = false;
+  $('game').hidden = true;
+  state.it = $('answerMode').value === 'it';
+  let a = +$('rangeFrom').value, b = +$('rangeTo').value;
+  if(a > b) [a,b] = [b,a];
+  state.from = a; state.to = b;
+  const st = $('detStatus');
+  st.className = ''; st.textContent = '🎤 Listening…';
+  try {
+    await startMic();
+  } catch(err){
+    st.className = 'err';
+    st.textContent = '⚠ Cannot access the microphone';
+  }
+  det.running = true;
+  buildPiano($('dpiano'), true);
+  $('detect').hidden = false;
+  micTimer = setInterval(detLoop, 80);
+});
+$('detStop').addEventListener('click', stopDetect);
 
 buildButtons();
 </script>
