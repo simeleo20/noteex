@@ -11,7 +11,16 @@
 body{margin:0;font-family:system-ui,sans-serif;background:#11151c;color:#e6edf3;display:flex;flex-direction:column;align-items:center;min-height:100vh;padding:16px}
 h1{font-size:1.4rem;margin:8px 0 16px}
 .panel{display:flex;flex-direction:column;gap:12px;align-items:center;background:#161b22;border:1px solid #30363d;border-radius:12px;padding:14px 18px;margin-bottom:16px;width:100%;max-width:680px}
-#panelBody{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center}
+.pbody{display:flex;flex-wrap:wrap;gap:12px;align-items:flex-end;justify-content:center}
+.slot{display:contents}
+#home{gap:16px;padding:28px 18px}
+.home-btn{width:100%;max-width:300px;padding:22px 14px;font-size:1.15rem;font-weight:700;border-radius:12px;justify-content:center}
+.back-row{display:flex;align-items:center;gap:12px;width:100%;margin-bottom:2px}
+.back{padding:5px 12px;font-size:.85rem}
+.err-line{color:#f85149;font-size:.9rem;width:100%;text-align:center}
+#dpiano.mute .wkey,#dpiano.mute .bkey{cursor:default}
+#dpiano.mute .wkey:hover{background:#e6edf3}
+#dpiano.mute .bkey:hover{background:#161b22}
 #summary{display:flex;align-items:center;gap:14px;width:100%;justify-content:center;font-size:1rem}
 .mini-title{font-weight:800;font-size:1.05rem}
 #gearBtn{padding:6px 16px;font-size:1rem}
@@ -75,13 +84,18 @@ input[type=range]{accent-color:#238636}
 <body>
 <h1>🎼 Note Exerciser</h1>
 
-<div id="setup" class="panel">
-  <div id="summary" hidden>
-    <span class="mini-title">🎼 Note Exerciser</span>
-    <span id="score"></span>
-    <button id="gearBtn" title="Settings">⚙</button>
+<nav id="home" class="panel">
+  <button id="goPractice" class="home-btn">🎼 Practice reading</button>
+  <button id="goListen" class="home-btn">🎧 Listen &amp; tune</button>
+  <a class="kofi" href="https://ko-fi.com/simelab" target="_blank" rel="noopener">☕ Support this project</a>
+</nav>
+
+<section id="setupPractice" class="panel" hidden>
+  <div class="back-row">
+    <button class="back js-home">← Home</button>
+    <span class="mini-title">🎼 Practice</span>
   </div>
-  <div id="panelBody">
+  <div id="panelBody" class="pbody">
     <label>Clef
       <select id="clef">
         <option value="treble">Treble</option>
@@ -90,27 +104,56 @@ input[type=range]{accent-color:#238636}
         <option value="tenor">Tenor</option>
       </select>
     </label>
-    <label>Lowest note <select id="rangeFrom"></select></label>
-    <label>Highest note <select id="rangeTo"></select></label>
-    <label>Answer mode
+    <span id="pRange" class="slot"><span id="rangePair">
+      <label>Lowest note <select id="rangeFrom"></select></label>
+      <label>Highest note <select id="rangeTo"></select></label>
+    </span></span>
+    <label>Answer
       <select id="answerMode">
-        <option value="it">Buttons · Solfège (Do Re Mi)</option>
-        <option value="en">Buttons · Letters (C D E F G A B)</option>
+        <option value="buttons">Buttons</option>
         <option value="mic-relative">Microphone · relative</option>
         <option value="mic-exact">Microphone · exact</option>
         <option value="piano-relative">Piano · relative</option>
         <option value="piano-exact">Piano · exact</option>
       </select>
     </label>
-    <label class="chk"><input type="checkbox" id="pianoLabels" checked> Key labels</label>
+    <span id="pNames" class="slot"><span id="namesPair">
+      <label>Note names
+        <select class="js-names">
+          <option value="it">Do Re Mi · Solfège</option>
+          <option value="en">C D E · Letters</option>
+        </select>
+      </label>
+    </span></span>
+    <span id="pLabels" class="slot"><span id="labelsPair">
+      <label class="chk"><input type="checkbox" id="pianoLabels" checked> Key labels</label>
+    </span></span>
     <label class="chk"><input type="checkbox" id="optMistakes"> Repeat mistakes</label>
     <label class="chk"><input type="checkbox" id="optLeaps"> Big leaps</label>
     <button id="startBtn" class="primary">▶ Start</button>
-    <button id="detectBtn">🎧 Listen</button>
-    <button id="collapseBtn" hidden>▲ Collapse</button>
-    <a id="kofiLink" class="kofi" href="https://ko-fi.com/simelab" target="_blank" rel="noopener">☕ Support this project</a>
+    <div id="quizErr" class="err-line" hidden></div>
   </div>
-</div>
+  <div id="summary" hidden>
+    <span class="mini-title">🎼 Practice</span>
+    <span id="score"></span>
+    <button id="gearBtn" title="Settings">⚙</button>
+    <button id="homeBtn" title="Home">⌂</button>
+  </div>
+  <button id="collapseBtn" hidden>▲ Collapse</button>
+</section>
+
+<section id="setupListen" class="panel" hidden>
+  <div class="back-row">
+    <button class="back js-home">← Home</button>
+    <span class="mini-title">🎧 Listen</span>
+  </div>
+  <div class="pbody">
+    <span id="lNames" class="slot"></span>
+    <span id="lRange" class="slot"></span>
+    <span id="lLabels" class="slot"></span>
+    <button id="listenBtn" class="primary">▶ Start listening</button>
+  </div>
+</section>
 
 <div id="game" hidden>
   <svg id="staff" viewBox="0 0 600 340" xmlns="http://www.w3.org/2000/svg"></svg>
@@ -146,7 +189,7 @@ input[type=range]{accent-color:#238636}
   <div id="lvl"><i></i></div>
   <div id="detStatus">🎤 Listening…</div>
   <div id="dpiano"></div>
-  <p class="hint">Play any instrument — notes appear live. Tap keys to hear reference pitches.</p>
+  <p class="hint">Play any instrument — notes appear live.</p>
   <button id="detStop">⏹ Back</button>
 </section>
 
@@ -167,7 +210,7 @@ const DEFAULT_RANGE = {treble:[28,39], bass:[14,25], alto:[21,32], tenor:[21,32]
 const CHROMATIC_IT = ['Do','Do♯','Re','Re♯','Mi','Fa','Fa♯','Sol','Sol♯','La','La♯','Si'];
 const CHROMATIC_EN = ['C','C♯','D','D♯','E','F','F♯','G','G♯','A','A♯','B'];
 
-const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null, mode:'it',
+const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null, mode:'buttons',
                score:0, total:0, streak:0, best:0, awaiting:false, running:false, locked:false, lockPitch:-999,
                repeatMistakes:false, bigLeaps:false};
 const mistakes = {};
@@ -439,8 +482,9 @@ function relabel(){
     b.textContent = (state.it ? NAMES_IT : NAMES_EN)[i];
   });
 }
-function buildPiano(box = $('piano'), forceRange = false){
+function buildPiano(box = $('piano'), forceRange = false, interactive = true){
   box.innerHTML = '';
+  box.classList.toggle('mute', !interactive);
   let dias = [];
   const rel = !forceRange && state.mode === 'piano-relative';
   if(rel){
@@ -508,7 +552,7 @@ function buildPiano(box = $('piano'), forceRange = false){
       k.dataset.dia = dia;
       k.dataset.midi = 12 * (Math.floor(dia / 7) + 1) + SEMI[dia % 7];
       if(showLabels) k.textContent = names[dia % 7] + (rel ? '' : Math.floor(dia / 7));
-      k.addEventListener('click', () => pianoAnswer(dia, k));
+      if(interactive) k.addEventListener('click', () => pianoAnswer(dia, k));
       row.appendChild(k);
     });
     for(let j = 0; j < M - 1; j++){
@@ -521,7 +565,7 @@ function buildPiano(box = $('piano'), forceRange = false){
       if(showLabels) b.textContent = sh[i];
       const midi = 12 * (Math.floor(lo / 7) + 1) + SEMI[i] + 1;
       b.dataset.midi = midi;
-      b.addEventListener('click', () => playNote(midiFreq(midi)));
+      if(interactive) b.addEventListener('click', () => playNote(midiFreq(midi)));
       row.appendChild(b);
     }
     box.appendChild(row);
@@ -539,7 +583,7 @@ addEventListener('resize', () => {
   clearTimeout(rzT);
   rzT = setTimeout(() => {
     if(state.running && isPianoMode()) buildPiano();
-    else if(det.running) buildPiano($('dpiano'), true);
+    else if(det.running) buildPiano($('dpiano'), true, false);
   }, 150);
 });
 (function initRanges(){
@@ -565,7 +609,8 @@ $('startBtn').addEventListener('click', async () => {
   stopDetect();
   stopMic();
   state.mode = $('answerMode').value;
-  state.it = state.mode === 'it';
+  state.it = namesValue() === 'it';
+  $('quizErr').hidden = true;
   let a = +$('rangeFrom').value, b = +$('rangeTo').value;
   if(a > b) [a,b] = [b,a];
   state.from = a; state.to = b;
@@ -580,8 +625,8 @@ $('startBtn').addEventListener('click', async () => {
     try {
       await startMic();
     } catch(err) {
-      $('feedback').className = 'bad';
-      $('feedback').textContent = '⚠ Cannot access the microphone';
+      $('quizErr').textContent = '⚠ Cannot access the microphone';
+      $('quizErr').hidden = false;
       return;
     }
   }
@@ -629,6 +674,49 @@ document.addEventListener('keydown', e => {
   if(n >= 1 && n <= 7) answer(n - 1);
 });
 
+/* ---------- navigation ---------- */
+function namesValue(){ return document.querySelector('.js-names').value; }
+function syncNames(v){
+  document.querySelectorAll('.js-names').forEach(s => s.value = v);
+  state.it = v === 'it';
+  relabel();
+}
+document.querySelectorAll('.js-names').forEach(s =>
+  s.addEventListener('change', e => syncNames(e.target.value)));
+function openPanel(which){
+  const m = which === 'p'
+    ? {range:'pRange', names:'pNames', labels:'pLabels'}
+    : {range:'lRange', names:'lNames', labels:'lLabels'};
+  $(m.range).append($('rangePair'));
+  $(m.names).append($('namesPair'));
+  $(m.labels).append($('labelsPair'));
+}
+function showHome(){
+  stopDetect();
+  state.running = false; state.awaiting = false;
+  stopMic();
+  $('game').hidden = true;
+  $('setupPractice').hidden = true;
+  $('setupListen').hidden = true;
+  $('summary').hidden = true;
+  $('panelBody').hidden = false;
+  $('collapseBtn').hidden = true;
+  $('quizErr').hidden = true;
+  $('home').hidden = false;
+}
+$('goPractice').addEventListener('click', () => {
+  $('home').hidden = true;
+  openPanel('p');
+  $('setupPractice').hidden = false;
+});
+$('goListen').addEventListener('click', () => {
+  $('home').hidden = true;
+  openPanel('l');
+  $('setupListen').hidden = false;
+});
+document.querySelectorAll('.js-home').forEach(b => b.addEventListener('click', showHome));
+$('homeBtn').addEventListener('click', showHome);
+
 /* ---------- listen mode (real-time note detector) ---------- */
 const det = {running:false};
 let detLastMidi = -999;
@@ -670,12 +758,12 @@ function detLoop(){
     $('detStatus').textContent = rms >= detGate() ? '🎤 Too much noise — raise sensitivity?' : '🎤 Listening…';
   }
 }
-$('detectBtn').addEventListener('click', async () => {
+$('listenBtn').addEventListener('click', async () => {
   ensureAudio();
   stopDetect();
   state.running = false; state.awaiting = false;
   $('game').hidden = true;
-  state.it = $('answerMode').value === 'it';
+  state.it = namesValue() === 'it';
   let a = +$('rangeFrom').value, b = +$('rangeTo').value;
   if(a > b) [a,b] = [b,a];
   state.from = a; state.to = b;
@@ -688,11 +776,41 @@ $('detectBtn').addEventListener('click', async () => {
     st.textContent = '⚠ Cannot access the microphone';
   }
   det.running = true;
-  buildPiano($('dpiano'), true);
+  buildPiano($('dpiano'), true, false);
+  $('setupListen').hidden = true;
   $('detect').hidden = false;
   micTimer = setInterval(detLoop, 80);
 });
-$('detStop').addEventListener('click', stopDetect);
+$('detStop').addEventListener('click', () => {
+  stopDetect();
+  $('setupListen').hidden = false;
+});
+
+/* ---------- preferences ---------- */
+function savePrefs(){
+  try {
+    localStorage.setItem('noteex-prefs', JSON.stringify({
+      clef:$('clef').value, from:+$('rangeFrom').value, to:+$('rangeTo').value,
+      mode:$('answerMode').value, names:namesValue(),
+      labels:$('pianoLabels').checked, mistakes:$('optMistakes').checked,
+      leaps:$('optLeaps').checked, sens:+$('detSens').value
+    }));
+  } catch(e){}
+}
+try {
+  const p = JSON.parse(localStorage.getItem('noteex-prefs') || '{}');
+  if(p.clef) $('clef').value = p.clef;
+  if(p.from){ $('rangeFrom').value = p.from; $('rangeTo').value = p.to; }
+  if(p.mode) $('answerMode').value = p.mode;
+  if(p.names) document.querySelectorAll('.js-names').forEach(s => s.value = p.names);
+  if(p.labels === false) $('pianoLabels').checked = false;
+  if(p.mistakes) $('optMistakes').checked = true;
+  if(p.leaps) $('optLeaps').checked = true;
+  if(p.sens) $('detSens').value = p.sens;
+} catch(e){}
+state.it = namesValue() === 'it';
+document.addEventListener('change', savePrefs);
+document.addEventListener('input', savePrefs);
 
 buildButtons();
 </script>
