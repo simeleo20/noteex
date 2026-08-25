@@ -57,6 +57,7 @@ select:hover,button:hover{background:#30363d}
 .kofi:hover{color:#e6edf3}
 #detect{display:flex;flex-direction:column;align-items:center;width:100%;gap:10px}
 .det-note{font-size:3.2rem;font-weight:800;line-height:1.05}
+.det-note.multi{font-size:2.1rem}
 .det-cents{height:1.3rem;color:#9aa4b2;font-size:1rem}
 #tuner{position:relative;width:100%;max-width:480px;height:46px;background:#161b22;border:1px solid #30363d;border-radius:10px;overflow:hidden}
 #tuner .band{position:absolute;left:46%;top:0;bottom:0;width:8%;background:rgba(63,185,80,.22)}
@@ -78,6 +79,7 @@ input[type=range]{accent-color:#238636}
   .prow{height:130px}
   .hint{margin-top:6px}
   .det-note{font-size:2.4rem}
+  .det-note.multi{font-size:1.6rem}
 }
 </style>
 </head>
@@ -189,7 +191,7 @@ input[type=range]{accent-color:#238636}
   <div id="lvl"><i></i></div>
   <div id="detStatus">🎤 Listening…</div>
   <div id="dpiano"></div>
-  <p class="hint">Play any instrument — notes appear live.</p>
+  <p class="hint">Play any instrument — up to three notes at once.</p>
   <button id="detStop">⏹ Back</button>
 </section>
 
@@ -214,7 +216,7 @@ const state = {clef:'treble', from:28, to:39, it:true, cur:null, last:null, mode
                score:0, total:0, streak:0, best:0, awaiting:false, running:false, locked:false, lockPitch:-999,
                repeatMistakes:false, bigLeaps:false};
 const mistakes = {};
-let analyser = null, micStream = null, micTimer = null;
+let analyser = null, micStream = null, micTimer = null, specAnalyser = null;
 let stableCount = 0, lastCandidate = -999;
 let lockFrames = 0, silentFrames = 0;
 function unlockMic(){
@@ -383,11 +385,16 @@ async function startMic(){
   analyser = actx.createAnalyser();
   analyser.fftSize = 2048;
   src.connect(analyser);
+  specAnalyser = actx.createAnalyser();
+  specAnalyser.fftSize = 16384;
+  specAnalyser.smoothingTimeConstant = 0;
+  src.connect(specAnalyser);
 }
 function stopMic(){
   if(micTimer){ clearInterval(micTimer); micTimer = null; }
   if(micStream){ micStream.getTracks().forEach(t => t.stop()); micStream = null; }
   analyser = null;
+  specAnalyser = null;
 }
 function midiFromFreq(f){ return 69 + 12 * Math.log2(f / 440); }
 function autoCorrelate(buf, sampleRate, minRms = 0.015){
@@ -423,6 +430,54 @@ function autoCorrelate(buf, sampleRate, minRms = 0.015){
   const a = (x1 + x3 - 2 * x2) / 2, bb = (x3 - x1) / 2;
   if(a) T0 = T0 - bb / (2 * a);
   return sampleRate / T0;
+}
+function multiPitch(specDb, sampleRate, fftSize){
+  const n = specDb.length, binHz = sampleRate / fftSize;
+  const m = new Float32Array(n);
+  let gmax = 0, sumSq = 0;
+  for(let i = 0; i < n; i++){
+    m[i] = specDb[i] > -120 ? Math.pow(10, specDb[i] / 20) : 0;
+    sumSq += m[i] * m[i];
+    if(m[i] > gmax) gmax = m[i];
+  }
+  if(gmax <= 0 || sumSq <= 0 || gmax * gmax / sumSq < 0.06) return [];
+  const floorAmp = gmax * 0.05;
+  const cands = [];
+  for(let i = 2; i < n - 2; i++){
+    if(m[i] > m[i - 1] && m[i] >= m[i + 1] && m[i] >= floorAmp){
+      const den = m[i - 1] - 2 * m[i] + m[i + 1];
+      const d = den ? (m[i - 1] - m[i + 1]) / (2 * den) : 0;
+      const f = (i + (isFinite(d) ? Math.max(-1, Math.min(1, d)) : 0)) * binHz;
+      if(f >= 55 && f <= 2200) cands.push({f, a:m[i]});
+    }
+  }
+  cands.sort((x, y) => y.a - x.a);
+  const near = (f, ref, cents) => ref > 0 && Math.abs(1200 * Math.log2(f / ref)) < cents;
+  const notes = [];
+  for(const c of cands){
+    if(notes.length >= 3) break;
+    let isHarmonic = false;
+    for(const nt of notes){
+      for(let k = 1; k <= 12; k++)
+        if(near(c.f, nt.f * k, 35)){ isHarmonic = true; break; }
+      if(!isHarmonic)
+        for(let k = 2; k <= 4; k++)
+          if(near(c.f, nt.f / k, 35)){ isHarmonic = true; break; }
+      if(isHarmonic) break;
+    }
+    if(isHarmonic) continue;
+    let f0 = c.f, fa = c.a, moved = true;
+    while(moved){
+      moved = false;
+      for(const q of cands){
+        if(q.a < 0.6 * fa || !near(q.f, f0 / 2, 45)) continue;
+        f0 = q.f; fa = q.a; moved = true;
+        break;
+      }
+    }
+    notes.push({f:f0, a:fa});
+  }
+  return notes;
 }
 function micLoop(){
   if(!state.running || !isMicMode() || !analyser) return;
@@ -739,24 +794,37 @@ function detLoop(){
   for(let i = 0; i < buf.length; i++) rms += buf[i] * buf[i];
   rms = Math.sqrt(rms / buf.length);
   $('lvl').firstElementChild.style.width = Math.min(100, rms * 500) + '%';
-  const f = autoCorrelate(buf, actx.sampleRate, detGate());
-  const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
   document.querySelectorAll('#dpiano .ok').forEach(k => k.classList.remove('ok'));
-  if(f > 0){
-    const m = midiFromFreq(f);
-    const cand = Math.round(m);
-    const cents = Math.round((m - cand) * 100);
-    detLastMidi = cand;
-    $('detNote').textContent = `${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1}`;
+  let notes = [];
+  if(rms >= detGate() && specAnalyser){
+    const spec = new Float32Array(specAnalyser.frequencyBinCount);
+    specAnalyser.getFloatFrequencyData(spec);
+    notes = multiPitch(spec, actx.sampleRate, specAnalyser.fftSize);
+  }
+  const pcNames = state.it ? CHROMATIC_IT : CHROMATIC_EN;
+  if(notes.length){
+    const seen = new Set(), parts = [];
+    for(const nt of notes){
+      const cand = Math.round(midiFromFreq(nt.f));
+      if(seen.has(cand)) continue;
+      seen.add(cand);
+      parts.push(`${pcNames[((cand % 12) + 12) % 12]}${Math.floor(cand / 12) - 1}`);
+      const key = document.querySelector(`#dpiano [data-midi="${cand}"]`);
+      if(key) key.classList.add('ok');
+    }
+    const pm = midiFromFreq(notes[0].f), pc = Math.round(pm);
+    const cents = Math.round((pm - pc) * 100);
+    detLastMidi = pc;
+    $('detNote').textContent = parts.join(' · ');
+    $('detNote').classList.toggle('multi', parts.length > 1);
     $('detCents').textContent = `${cents > 0 ? '+' : ''}${cents}¢`;
     $('needle').style.left = (50 + Math.max(-50, Math.min(50, cents))) + '%';
-    const key = document.querySelector(`#dpiano [data-midi="${cand}"]`);
-    if(key) key.classList.add('ok');
     $('detStatus').className = '';
     $('detStatus').textContent = '🎤 Listening…';
   } else {
     detLastMidi = -999;
     $('detNote').textContent = '—';
+    $('detNote').classList.remove('multi');
     $('detCents').innerHTML = '&nbsp;';
     $('needle').style.left = '50%';
     $('detStatus').className = 'err';

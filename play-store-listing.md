@@ -35,6 +35,7 @@ PLAY THE BUILT-IN PIANO
 
 LISTEN AND TUNE
 • Live note detector: play any note and see its name and octave
+• Detects up to three notes at once — great for checking chords
 • Tuner needle shows whether you are sharp or flat, to the cent
 • Watch the on-screen keyboard light up as you play
 • Adjustable microphone sensitivity for quiet instruments
@@ -57,6 +58,7 @@ Noteex is supported by donations. If it helps you, you can buy the developer a c
 
 ```
 • New Listen mode: real-time note detector and tuner for your instrument
+• Chord check: detects up to three notes at once
 • Cleaner start screen separating Practice and Listen
 • Your settings are now remembered between sessions
 • Pitch detection fixes: no more wrong-octave jumps
