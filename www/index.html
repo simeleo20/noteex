@@ -471,7 +471,7 @@ function multiPitch(specDb, sampleRate, fftSize){
           break;
         }
       if(!isHarmonic)
-        for(let k = 2; k <= 4; k++)
+        for(let k = 3; k <= 4; k++)
           if(near(c.f, nt.f / k, 35)){ isHarmonic = true; break; }
       if(isHarmonic) break;
     }
