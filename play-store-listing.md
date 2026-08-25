@@ -11,7 +11,7 @@ Noteex · Learn to read music
 ## Short description
 
 ```
-Practice reading sheet music: 4 clefs, mic & piano input, smart drills. Free.
+Practice reading music: 4 clefs, mic & piano input, live tuner. Free.
 ```
 
 ## Full description
@@ -33,6 +33,12 @@ PLAY THE BUILT-IN PIANO
 • Two-octave keyboard with black keys and optional key labels
 • Relative or exact answering, just like microphone mode
 
+LISTEN AND TUNE
+• Live note detector: play any note and see its name and octave
+• Tuner needle shows whether you are sharp or flat, to the cent
+• Watch the on-screen keyboard light up as you play
+• Adjustable microphone sensitivity for quiet instruments
+
 SMART PRACTICE THAT ADAPTS TO YOU
 • Repeat mistakes: the notes you miss show up more often
 • Big leaps: train reading across large intervals and ledger lines
@@ -41,7 +47,17 @@ SMART PRACTICE THAT ADAPTS TO YOU
 SIMPLE AND RESPECTFUL
 • Works completely offline
 • No ads, no accounts, no data collected
+• Your settings are remembered between sessions
 • Tiny download size
 
 Noteex is supported by donations. If it helps you, you can buy the developer a coffee: https://ko-fi.com/simelab
+```
+
+## Release notes — v1.1 (closed testing)
+
+```
+• New Listen mode: real-time note detector and tuner for your instrument
+• Cleaner start screen separating Practice and Listen
+• Your settings are now remembered between sessions
+• Pitch detection fixes: no more wrong-octave jumps
 ```
