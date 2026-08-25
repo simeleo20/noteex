@@ -650,10 +650,13 @@ $('startBtn').addEventListener('click', async () => {
 function collapsePanel(){
   $('summary').hidden = false;
   $('panelBody').hidden = true;
+  document.querySelector('#setupPractice .back-row').hidden = true;
+  $('collapseBtn').hidden = true;
 }
 $('gearBtn').addEventListener('click', () => {
   $('summary').hidden = true;
   $('panelBody').hidden = false;
+  document.querySelector('#setupPractice .back-row').hidden = false;
   $('collapseBtn').hidden = !state.running;
 });
 $('collapseBtn').addEventListener('click', () => {
@@ -666,6 +669,7 @@ $('stopBtn').addEventListener('click', () => {
   $('game').hidden = true;
   $('summary').hidden = true;
   $('panelBody').hidden = false;
+  document.querySelector('#setupPractice .back-row').hidden = false;
   $('collapseBtn').hidden = true;
 });
 document.addEventListener('keydown', e => {
@@ -707,6 +711,7 @@ function showHome(){
 $('goPractice').addEventListener('click', () => {
   $('home').hidden = true;
   openPanel('p');
+  document.querySelector('#setupPractice .back-row').hidden = false;
   $('setupPractice').hidden = false;
 });
 $('goListen').addEventListener('click', () => {
